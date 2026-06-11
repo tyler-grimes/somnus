@@ -43,21 +43,38 @@ export function parseSpoolLines(raw: string): SpoolEntry[] {
 }
 
 /** Returns the number of entries ingested. Rename-then-read keeps concurrent
- *  cc.sh appends safe: they just start a fresh spool file. */
+ *  cc.sh appends safe: they just start a fresh spool file. A leftover
+ *  .ingest file (crash between rename and unlink) is recovered first; rows
+ *  that fail to insert are logged and dropped so the file never wedges. */
 export async function sweepCcSpend(spoolPath: string = SPOOL_PATH): Promise<number> {
-  if (!fs.existsSync(spoolPath)) return 0;
   const ingestPath = spoolPath + ".ingest";
-  fs.renameSync(spoolPath, ingestPath);
-  const entries = parseSpoolLines(fs.readFileSync(ingestPath, "utf8"));
-  for (const e of entries) {
-    await logSpend({
-      model: "claude-code-session",
-      purpose: `cc:${e.dir}${e.session_id ? ` ${e.session_id}` : ""}`,
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: e.usd,
-    });
+  let ingested = 0;
+
+  const ingestFile = async (file: string): Promise<void> => {
+    const entries = parseSpoolLines(fs.readFileSync(file, "utf8"));
+    for (const e of entries) {
+      try {
+        await logSpend({
+          model: "claude-code-session",
+          purpose: `cc:${e.dir}${e.session_id ? ` ${e.session_id}` : ""}`,
+          inputTokens: 0,
+          outputTokens: 0,
+          costUsd: e.usd,
+        });
+        ingested++;
+      } catch (err) {
+        console.error("[cc-spend] logSpend failed, dropping row:", err);
+      }
+    }
+    fs.unlinkSync(file);
+  };
+
+  // Recover a file orphaned by a crash between rename and unlink
+  if (fs.existsSync(ingestPath)) await ingestFile(ingestPath);
+
+  if (fs.existsSync(spoolPath)) {
+    fs.renameSync(spoolPath, ingestPath);
+    await ingestFile(ingestPath);
   }
-  fs.unlinkSync(ingestPath);
-  return entries.length;
+  return ingested;
 }
