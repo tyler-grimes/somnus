@@ -71,10 +71,13 @@ verification results).
   - `briefing.ts`, `llm.ts` (direct Anthropic SDK + zod structured outputs +
     spend logging), `embeddings.ts`, `db.ts`, `config.ts`, `cli.ts`
     (`npm run cli`), `index.ts` (boot: initPolicy → scheduler → bot).
-- `tools/cc.sh` — spawn/resume headless Claude Code sessions in any repo
-  (`run`, `resume`, `list`). `tools/term.sh` — control live tmux panes
-  (`list`/`peek`/`send`/`keys`). Both are host tools: ALWAYS human-gated,
-  never covered by automode or standing rules.
+- `tools/cc.sh` + `tools/term.sh` — Mac-only host tools (headless CC sessions /
+  tmux control), NOT shipped in the image. The container variant is
+  `agent/tools/cc.sh` (clone/run/resume/list/push): subscription-billed
+  sessions via CLAUDE_CODE_OAUTH_TOKEN, GitHub PAT only visible to
+  clone/push, costs spooled to workspace and swept to spend_log every 10
+  min. ALL cc.sh/term.sh/tmux invocations are ALWAYS human-gated, never
+  covered by automode or standing rules.
 - `workspace/` — agent's scratch dir (gitignored); `workspace/inbox/` receives
   Telegram uploads.
 

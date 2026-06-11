@@ -179,3 +179,36 @@ launchctl load ~/Library/LaunchAgents/com.tyler.somnus-backup-pull.plist
 - Deploy: `tools/deploy.sh` (from the Mac)
 - Logs: `ssh somnus-vm 'cd ~/somnus && docker compose --profile agent logs -f --tail 100 agent'`
 - psql: `ssh somnus-vm 'cd ~/somnus && docker compose exec -T db psql -U brain -d brain'`
+
+## 8. Coding sessions (cc.sh) — one-time credential setup
+
+Somnus runs headless Claude Code sessions inside its container
+(`/app/agent/tools/cc.sh`; every invocation needs a Telegram approval).
+Two credentials in the VM `.env` (never on the Mac, never in git):
+
+1. **GitHub PAT** — github.com → Settings → Developer settings →
+   Fine-grained tokens → Generate: Resource owner = you; Repository access =
+   the repos Somnus may touch; Permissions = Contents (Read and write) +
+   Metadata (Read-only); Expiration 90 days. Then enable branch protection on
+   `main` for those repos (Settings → Branches → Add rule). Add to VM `.env`:
+   `GITHUB_TOKEN=github_pat_...`
+
+2. **Claude subscription token** — on the Mac run `claude setup-token`,
+   complete the browser flow, copy the token. Add to VM `.env`:
+   `CLAUDE_CODE_OAUTH_TOKEN=...`  (≈1-year expiry; revoke anytime at
+   claude.ai → Settings. Sessions share your plan's usage limits.)
+
+Roll the image: `tools/deploy.sh`.
+
+Verification:
+- Ask Somnus (Telegram) to clone a small repo and make a trivial change —
+  each cc.sh call should produce an approval prompt, even in automode.
+- `ssh somnus-vm 'docker compose exec agent sh -c "cat /app/workspace/repos/<repo>/.git/config"'`
+  — no token anywhere in it.
+- Push test: have Somnus push branch `cc-test` and send the compare URL;
+  verify pushing to `main` is refused by the wrapper.
+- After ≤10 min: `docker compose exec -T db psql -U brain -d brain -c
+  "select model, purpose, cost_usd from spend_log where model='claude-code-session' order by created_at desc limit 3;"`
+- `docker compose restart agent`, then ask Somnus to `cc.sh resume` the
+  earlier session — the claude_state volume should keep it. (If resume fails,
+  check `docker volume ls | grep claude_state`.)
