@@ -9,11 +9,11 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
    **CAX11** (2 vCPU Ampere ARM, 4GB), **Falkenstein**, **Ubuntu 24.04**,
    add your SSH key.
 2. Hetzner Cloud Firewall: create firewall "somnus-deny-all" with **no inbound
-   rules at all** (default deny) and apply it to the server. Tailscale needs
-   only outbound. Public SSH works until the firewall applies — do step 3
-   promptly.
-3. First login (`ssh root@<public-ip>` — do this BEFORE applying the firewall,
-   or use the Hetzner web console):
+   rules at all** (default deny) but do **not** attach it to the server yet —
+   public SSH must keep working until Tailscale SSH is verified in step 4.
+   Tailscale needs only outbound.
+3. First login (`ssh root@<public-ip>` over public SSH — the firewall is not
+   attached yet):
 
    ```bash
    # user
