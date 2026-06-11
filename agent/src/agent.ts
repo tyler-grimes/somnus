@@ -28,7 +28,7 @@ const BRAIN_MCP_PATH = path.resolve(
   "../../brain-mcp/dist/index.js",
 );
 
-const WORKSPACE_DIR =
+export const WORKSPACE_DIR =
   config.workspaceDir || path.resolve(import.meta.dirname, "../../workspace");
 fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 

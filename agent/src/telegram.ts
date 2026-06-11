@@ -6,8 +6,11 @@
  *    LLM call, DB write, or reply. Drops are counted and logged to stderr.
  *  - Long polling only: outbound HTTPS to api.telegram.org, nothing listens.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { Bot } from "grammy";
 import { config } from "./config.js";
+import { logEpisode, pool } from "./db.js";
 import {
   autoModeStatus,
   CHAT_MODELS,
@@ -17,6 +20,7 @@ import {
   setChatModel,
 } from "./agent.js";
 import { logFriction } from "./db.js";
+import { WORKSPACE_DIR } from "./agent.js";
 import { resolveApproval } from "./approvals.js";
 import { activeSkills, approveSkill, pendingSkills, rejectSkill } from "./skills.js";
 
@@ -150,6 +154,54 @@ export function createBot(
   // One agent turn at a time: serialize messages so concurrent turns don't
   // interleave writes to the brain or race the session.
   let inflight: Promise<void> = Promise.resolve();
+
+  // Files, photos, voice notes → workspace/inbox/ + a page in the brain.
+  // The dream cycle and future ingestion phases eat from this folder.
+  bot.on(["message:document", "message:photo", "message:voice", "message:audio"], async (ctx) => {
+    try {
+      const msg = ctx.message;
+      const caption = msg.caption ?? "";
+      const tgFile = await ctx.getFile();
+      if (!tgFile.file_path) return void (await ctx.reply("Couldn't fetch that file from Telegram."));
+
+      const inbox = path.join(WORKSPACE_DIR, "inbox");
+      fs.mkdirSync(inbox, { recursive: true });
+      const original =
+        msg.document?.file_name ?? path.basename(tgFile.file_path) ?? "file.bin";
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const saved = path.join(inbox, `${stamp}-${path.basename(original)}`);
+
+      const res = await fetch(
+        `https://api.telegram.org/file/bot${config.telegramBotToken}/${tgFile.file_path}`,
+      );
+      if (!res.ok) throw new Error(`telegram file download failed: ${res.status}`);
+      fs.writeFileSync(saved, Buffer.from(await res.arrayBuffer()));
+
+      const kindLabel = msg.photo ? "photo" : msg.voice ? "voice note" : msg.audio ? "audio" : "document";
+      const title = caption || `${kindLabel}: ${original}`;
+      await pool.query(
+        `INSERT INTO pages (slug, type, title, timeline, frontmatter, effective_date)
+         VALUES ($1, 'note', $2, $3, $4, now())`,
+        [
+          `inbox-${stamp}-${path.basename(original).toLowerCase().replace(/[^a-z0-9.-]+/g, "-")}`,
+          title,
+          `Tyler sent a ${kindLabel} via Telegram on ${new Date().toISOString()}.\nSaved at: ${saved}${caption ? `\nCaption: ${caption}` : ""}`,
+          JSON.stringify({ source: "telegram_upload", file: saved, kind: kindLabel }),
+        ],
+      );
+      await logEpisode({
+        source: "ingestion",
+        role: "user",
+        content: `[${kindLabel} received: ${original}]${caption ? ` ${caption}` : ""} → ${saved}`,
+      });
+      await ctx.reply(
+        `📥 Saved ${kindLabel} to inbox${caption ? " with your note" : ""}. I'll remember it.`,
+      );
+    } catch (err) {
+      console.error("[telegram] file capture failed:", err);
+      await ctx.reply("File capture failed — check the console.").catch(() => {});
+    }
+  });
 
   // NOTE: this handler must NOT await the agent turn. grammY processes
   // updates sequentially, so a handler that blocks on the turn would starve
