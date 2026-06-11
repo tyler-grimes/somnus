@@ -45,14 +45,16 @@ function pathsFromInput(input: Record<string, unknown>): string[] {
 }
 
 type PermissionDecision =
-  | { behavior: "allow"; updatedInput: undefined }
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
   | { behavior: "deny"; message: string };
 
 async function decidePermission(
   toolName: string,
   input: Record<string, unknown>,
 ): Promise<PermissionDecision> {
-  const allow: PermissionDecision = { behavior: "allow", updatedInput: undefined };
+  // SDK contract: an allow decision must echo the tool input back as
+  // updatedInput — returning undefined fails validation and blocks the call.
+  const allow: PermissionDecision = { behavior: "allow", updatedInput: input };
   const deny = (message: string): PermissionDecision => ({ behavior: "deny", message });
 
   if (toolName.startsWith("mcp__brain__")) return allow;
