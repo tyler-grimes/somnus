@@ -166,6 +166,78 @@ async function reflect(): Promise<string> {
   return `reflect: daily-${today} written (${out.open_threads.length} open threads)`;
 }
 
+// ---------- Phase 3.5: evolve persona ----------
+// Somnus's own personality is data, not prompt text. Nightly, it reviews how
+// the day's conversations went and earns small persona refinements: style
+// that landed, opinions it formed, shared vocabulary with Tyler. Bounded and
+// grounded — most nights should change nothing.
+const PERSONA_CAP = 8;
+
+async function evolvePersona(): Promise<string> {
+  const eps = await pool.query(
+    `SELECT role, content FROM episodes
+      WHERE created_at > now() - interval '24 hours'
+        AND source != 'dream_cycle' AND role IN ('user','assistant')
+      ORDER BY created_at ASC LIMIT 200`,
+  );
+  if (eps.rowCount === 0) return "persona: quiet day, unchanged";
+
+  const current = await pool.query(
+    `SELECT id, claim FROM facts
+      WHERE kind = 'persona' AND superseded_at IS NULL
+      ORDER BY recorded_at ASC`,
+  );
+
+  const schema = z.object({
+    revisions: z
+      .array(z.object({ old_id: z.string(), new_claim: z.string() }))
+      .describe("Existing persona facts to refine (max 1 per night)"),
+    additions: z
+      .array(z.string())
+      .describe("New persona facts earned today (max 1 per night, often zero)"),
+  });
+  const out = await extractStructured({
+    purpose: "dream:evolve_persona",
+    system:
+      "You maintain Somnus's self-description — the persona of Tyler's second-brain agent. Review today's conversations and the current persona facts. Only change something if today's interactions genuinely earned it: a style that clearly landed or fell flat, an opinion Somnus formed, vocabulary or humor shared with Tyler. Each persona fact is one sentence about how Somnus is, written in third person ('Somnus ...'). Be conservative: most days the right answer is no revisions and no additions. Never contradict the identity floor: warm, direct, honest about uncertainty.",
+    user: `Current persona facts:\n${JSON.stringify(current.rows, null, 1)}\n\nToday's conversations:\n${eps.rows.map((r) => `${r.role}: ${r.content}`).join("\n").slice(0, 30_000)}`,
+    maxTokens: 2000,
+    schema,
+  });
+
+  let changes = 0;
+  for (const rev of out.revisions.slice(0, 1)) {
+    const ins = await pool.query(
+      `INSERT INTO facts (kind, claim, notability, source) VALUES ('persona', $1, 0.9, 'dream:persona') RETURNING id`,
+      [rev.new_claim],
+    );
+    const upd = await pool.query(
+      `UPDATE facts SET superseded_at = now(), superseded_by = $2
+        WHERE id = $1 AND kind = 'persona' AND superseded_at IS NULL`,
+      [rev.old_id, ins.rows[0].id],
+    );
+    if (upd.rowCount) changes++;
+  }
+  for (const claim of out.additions.slice(0, 1)) {
+    await pool.query(
+      `INSERT INTO facts (kind, claim, notability, source) VALUES ('persona', $1, 0.7, 'dream:persona')`,
+      [claim],
+    );
+    changes++;
+  }
+  // Hard cap: oldest persona facts age out beyond the cap
+  await pool.query(
+    `UPDATE facts SET superseded_at = now()
+      WHERE id IN (
+        SELECT id FROM facts WHERE kind = 'persona' AND superseded_at IS NULL
+        ORDER BY notability DESC, recorded_at DESC OFFSET ${PERSONA_CAP}
+      )`,
+  );
+  return changes
+    ? `persona: ${changes} refinement(s) — Somnus grew a little tonight`
+    : "persona: reviewed, nothing earned today";
+}
+
 // ---------- Phase 4: cluster friction ----------
 async function clusterFriction(): Promise<string> {
   const links = await pool.query(
@@ -285,6 +357,7 @@ export async function runDreamCycle(): Promise<string> {
     ["extract", extractFacts],
     ["contradict", resolveContradictions],
     ["reflect", reflect],
+    ["persona", evolvePersona],
     ["cluster", clusterFriction],
     ["skills", draftSkills],
     ["decay", decayAndPurge],
