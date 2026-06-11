@@ -334,6 +334,33 @@ async function draftSkills(): Promise<string> {
   return `skills: drafted ${drafted.join(", ")} → .claude/skills-pending/ (awaiting your review)`;
 }
 
+// ---------- Phase 5.5: embed backlog ----------
+// Facts inserted by the dream cycle (and anything that missed write-time
+// embedding) get vectors here, in batches.
+async function embedBacklog(): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) return "embed: skipped (no OPENAI_API_KEY)";
+  const { embedBatch } = await import("./embeddings.js");
+  let embedded = 0;
+  for (const table of ["facts", "content_chunks"] as const) {
+    const textCol = table === "facts" ? "claim" : "chunk_text";
+    const rows = await pool.query(
+      `SELECT id, ${textCol} AS text FROM ${table} WHERE embedding IS NULL
+       ${table === "facts" ? "AND superseded_at IS NULL" : ""} LIMIT 100`,
+    );
+    if (rows.rowCount === 0) continue;
+    const vecs = await embedBatch(rows.rows.map((r) => r.text));
+    if (!vecs) return "embed: FAILED — embedding API unavailable";
+    for (let i = 0; i < rows.rows.length; i++) {
+      await pool.query(`UPDATE ${table} SET embedding = $2::halfvec WHERE id = $1`, [
+        rows.rows[i].id,
+        vecs[i],
+      ]);
+    }
+    embedded += rows.rowCount ?? 0;
+  }
+  return embedded ? `embed: ${embedded} rows vectorized` : "embed: backlog clear";
+}
+
 // ---------- Phase 6: decay + purge ----------
 async function decayAndPurge(): Promise<string> {
   const decay = await pool.query(
@@ -360,6 +387,7 @@ export async function runDreamCycle(): Promise<string> {
     ["persona", evolvePersona],
     ["cluster", clusterFriction],
     ["skills", draftSkills],
+    ["embed", embedBacklog],
     ["decay", decayAndPurge],
   ];
 

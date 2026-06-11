@@ -306,7 +306,12 @@ export async function runAgentTurn(
           brain: {
             command: "node",
             args: [BRAIN_MCP_PATH],
-            env: { DATABASE_URL: config.databaseUrl },
+            env: {
+              DATABASE_URL: config.databaseUrl,
+              // Enables write-time embeddings + hybrid vector retrieval; the
+              // brain degrades to FTS/trigram-only when absent.
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+            },
           },
         },
         // Nothing is pre-approved except brain tools — every other call goes

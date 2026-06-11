@@ -17,6 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import pg from "pg";
 import { z } from "zod";
+import { embedText } from "./embeddings.js";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -30,26 +31,64 @@ server.tool(
   "Search the second brain's memory: page chunks (full-text) and facts (fuzzy). Returns the most relevant memories for a query.",
   { query: z.string().min(1).describe("What to search for") },
   async ({ query }) => {
-    const chunks = await pool.query(
-      `SELECT p.title, p.slug, c.chunk_text,
-              ts_rank(c.fts_vector, q) AS rank
-         FROM content_chunks c
-         JOIN pages p ON p.id = c.page_id AND p.deleted_at IS NULL,
-              plainto_tsquery('english', $1) q
-        WHERE c.fts_vector @@ q
-        ORDER BY rank DESC
-        LIMIT 8`,
-      [query],
-    );
-    const facts = await pool.query(
-      `SELECT kind, claim, valid_from, valid_until, confidence
-         FROM facts
-        WHERE superseded_at IS NULL
-          AND (claim ILIKE '%' || $1 || '%' OR similarity(claim, $1) > 0.2)
-        ORDER BY similarity(claim, $1) DESC, notability DESC
-        LIMIT 6`,
-      [query],
-    );
+    const qVec = await embedText(query);
+    // Chunks: hybrid RRF (FTS + vector) when embeddings exist; FTS-only otherwise
+    const chunks = qVec
+      ? await pool.query(
+          `WITH fts AS (
+             SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank(c.fts_vector, q) DESC) AS rk
+               FROM content_chunks c, plainto_tsquery('english', $1) q
+              WHERE c.fts_vector @@ q LIMIT 50
+           ),
+           vec AS (
+             SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::halfvec) AS rk
+               FROM content_chunks WHERE embedding IS NOT NULL
+              ORDER BY embedding <=> $2::halfvec LIMIT 50
+           ),
+           fused AS (
+             SELECT COALESCE(fts.id, vec.id) AS id,
+                    COALESCE(1.0/(60+fts.rk), 0) + COALESCE(1.0/(60+vec.rk), 0) AS score
+               FROM fts FULL OUTER JOIN vec ON fts.id = vec.id
+           )
+           SELECT p.title, p.slug, c.chunk_text
+             FROM fused
+             JOIN content_chunks c ON c.id = fused.id
+             JOIN pages p ON p.id = c.page_id AND p.deleted_at IS NULL
+            ORDER BY fused.score DESC LIMIT 8`,
+          [query, qVec],
+        )
+      : await pool.query(
+          `SELECT p.title, p.slug, c.chunk_text
+             FROM content_chunks c
+             JOIN pages p ON p.id = c.page_id AND p.deleted_at IS NULL,
+                  plainto_tsquery('english', $1) q
+            WHERE c.fts_vector @@ q
+            ORDER BY ts_rank(c.fts_vector, q) DESC
+            LIMIT 8`,
+          [query],
+        );
+    // Facts: trigram + vector blend when available; trigram/substring otherwise
+    const facts = qVec
+      ? await pool.query(
+          `SELECT kind, claim, valid_from, valid_until, confidence
+             FROM facts
+            WHERE superseded_at IS NULL
+              AND (claim ILIKE '%' || $1 || '%' OR similarity(claim, $1) > 0.2
+                   OR (embedding IS NOT NULL AND (embedding <=> $2::halfvec) < 0.55))
+            ORDER BY COALESCE(1 - (embedding <=> $2::halfvec), 0) + similarity(claim, $1) DESC,
+                     notability DESC
+            LIMIT 6`,
+          [query, qVec],
+        )
+      : await pool.query(
+          `SELECT kind, claim, valid_from, valid_until, confidence
+             FROM facts
+            WHERE superseded_at IS NULL
+              AND (claim ILIKE '%' || $1 || '%' OR similarity(claim, $1) > 0.2)
+            ORDER BY similarity(claim, $1) DESC, notability DESC
+            LIMIT 6`,
+          [query],
+        );
     const lines: string[] = [];
     if (facts.rowCount) {
       lines.push("## Facts");
@@ -87,11 +126,12 @@ server.tool(
     confidence: z.number().min(0).max(1).optional(),
   },
   async ({ kind, claim, valid_from, confidence }) => {
+    const emb = await embedText(claim);
     const res = await pool.query(
-      `INSERT INTO facts (kind, claim, valid_from, confidence, source)
-       VALUES ($1, $2, $3, COALESCE($4, 0.8), 'mcp:remember_fact')
+      `INSERT INTO facts (kind, claim, valid_from, confidence, source, embedding)
+       VALUES ($1, $2, $3, COALESCE($4, 0.8), 'mcp:remember_fact', $5::halfvec)
        RETURNING id`,
-      [kind, claim, valid_from ?? null, confidence ?? null],
+      [kind, claim, valid_from ?? null, confidence ?? null, emb],
     );
     return {
       content: [{ type: "text" as const, text: `Stored fact ${res.rows[0].id}` }],
@@ -112,10 +152,11 @@ server.tool(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const emb = await embedText(new_claim);
       const ins = await client.query(
-        `INSERT INTO facts (kind, claim, valid_from, source)
-         VALUES ($1, $2, $3, 'mcp:supersede_fact') RETURNING id`,
-        [kind, new_claim, valid_from ?? null],
+        `INSERT INTO facts (kind, claim, valid_from, source, embedding)
+         VALUES ($1, $2, $3, 'mcp:supersede_fact', $4::halfvec) RETURNING id`,
+        [kind, new_claim, valid_from ?? null, emb],
       );
       const upd = await client.query(
         `UPDATE facts
