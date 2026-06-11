@@ -18,10 +18,12 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   /** Hard daily ceiling. Agent refuses to run once crossed. */
   dailySpendLimitUsd: Number(process.env.DAILY_SPEND_LIMIT_USD ?? "10"),
-  model: process.env.AGENT_MODEL ?? "claude-opus-4-8",
-  /** Background maintenance model (dream cycle). Sonnet per Tyler's
-   *  haiku/sonnet-for-background-agents preference. */
-  dreamModel: process.env.DREAM_MODEL ?? "claude-sonnet-4-6",
+  /** Day-to-day chat model. Sonnet: the harness (memory tools + core blocks)
+   *  carries most of the quality; switch live with /model in Telegram. */
+  model: process.env.CHAT_MODEL ?? process.env.AGENT_MODEL ?? "claude-sonnet-4-6",
+  /** Dream-cycle model. Memory consolidation compounds — errors here poison
+   *  retrieval forever — so it gets the most capable model. */
+  dreamModel: process.env.DREAM_MODEL ?? "claude-opus-4-8",
   timezone: process.env.TZ ?? "America/Denver",
   /** Scratch directory the agent may write to and run code in. */
   workspaceDir: process.env.WORKSPACE_DIR ?? "",

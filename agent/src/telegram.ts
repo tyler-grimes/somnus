@@ -8,7 +8,7 @@
  */
 import { Bot } from "grammy";
 import { config } from "./config.js";
-import { runAgentTurn } from "./agent.js";
+import { CHAT_MODELS, getChatModel, runAgentTurn, setChatModel } from "./agent.js";
 import { logFriction } from "./db.js";
 import { resolveApproval } from "./approvals.js";
 
@@ -62,6 +62,19 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
         `${ctx.callbackQuery.message?.text ?? ""}\n\n${known ? (approved ? "✅ approved" : "❌ denied") : "⌛ expired"}`,
       )
       .catch(() => {});
+  });
+
+  // /model — show or switch the chat model at runtime
+  bot.command("model", async (ctx) => {
+    const arg = (ctx.match ?? "").trim().toLowerCase();
+    if (!arg) {
+      await ctx.reply(
+        `Chat model: ${getChatModel()}\nSwitch: /model ${Object.keys(CHAT_MODELS).join(" | ")}`,
+      );
+      return;
+    }
+    const id = setChatModel(arg);
+    await ctx.reply(id ? `Chat model → ${id}` : `Unknown model "${arg}". Options: ${Object.keys(CHAT_MODELS).join(", ")}`);
   });
 
   // /dream — manually trigger the nightly consolidation cycle

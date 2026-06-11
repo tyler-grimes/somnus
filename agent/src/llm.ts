@@ -12,6 +12,7 @@ const client = new Anthropic();
 
 // $/MTok — used for the budget gate; close enough for a cap, not for invoicing.
 const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "claude-fable-5": { input: 10, output: 50 },
   "claude-opus-4-8": { input: 5, output: 25 },
   "claude-sonnet-4-6": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 1, output: 5 },

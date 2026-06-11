@@ -136,6 +136,24 @@ ${coreBlocks}
 
 let lastSessionId: string | undefined;
 
+/** Live-switchable chat model — /model in Telegram, no restart needed. */
+export const CHAT_MODELS: Record<string, string> = {
+  fable: "claude-fable-5",
+  opus: "claude-opus-4-8",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5",
+};
+let currentChatModel = config.model;
+export function getChatModel(): string {
+  return currentChatModel;
+}
+export function setChatModel(alias: string): string | null {
+  const id = CHAT_MODELS[alias] ?? (Object.values(CHAT_MODELS).includes(alias) ? alias : null);
+  if (!id) return null;
+  currentChatModel = id;
+  return id;
+}
+
 export async function runAgentTurn(
   userText: string,
   source: "telegram" | "cli",
@@ -157,7 +175,7 @@ export async function runAgentTurn(
   for await (const message of query({
     prompt: userText,
     options: {
-      model: config.model,
+      model: currentChatModel,
       systemPrompt: buildSystemPrompt(coreBlocks),
       maxTurns: 30,
       cwd: WORKSPACE_DIR,
@@ -199,7 +217,7 @@ export async function runAgentTurn(
   });
   if (costUsd > 0) {
     await logSpend({
-      model: config.model,
+      model: currentChatModel,
       purpose: "chat_turn",
       inputTokens,
       outputTokens,
