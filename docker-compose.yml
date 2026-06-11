@@ -43,6 +43,7 @@ services:
       TZ: ${TZ:-America/Denver}
     volumes:
       - agent_workspace:/app/workspace
+      - claude_state:/home/node/.claude
 
   # Later (see research/README.md build order):
   #   wal-archive: WAL-G continuous archiving to object storage
@@ -50,3 +51,4 @@ services:
 volumes:
   pg_data:
   agent_workspace:
+  claude_state:
