@@ -6,8 +6,8 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
 ## 1. Provision the VM (Hetzner)
 
 1. Hetzner Cloud console → new project "somnus" → add server:
-   **CAX11** (2 vCPU Ampere ARM, 4GB), **Falkenstein**, **Ubuntu 24.04**,
-   add your SSH key.
+   **CPX11** (2 vCPU AMD x86, 2GB), **Ashburn or Hillsboro (US)**, **Ubuntu
+   24.04**, add your SSH key.
 2. Hetzner Cloud Firewall: create firewall "somnus-deny-all" with **no inbound
    rules at all** (default deny) but do **not** attach it to the server yet —
    public SSH must keep working until Tailscale SSH is verified in step 4.
@@ -16,6 +16,11 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
    attached yet):
 
    ```bash
+   # swap — CPX11 has 2GB RAM; npm ci during image builds spikes past it
+   fallocate -l 2G /swapfile && chmod 600 /swapfile
+   mkswap /swapfile && swapon /swapfile
+   echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
    # user
    adduser somnus && usermod -aG sudo somnus
    rsync -a ~/.ssh /home/somnus/ && chown -R somnus:somnus /home/somnus/.ssh

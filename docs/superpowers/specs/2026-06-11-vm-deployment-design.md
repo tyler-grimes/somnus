@@ -8,7 +8,7 @@
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Provider | Hetzner Cloud CAX11 (2 vCPU ARM, 4GB RAM, ~€4/mo), Falkenstein, Ubuntu 24.04 | Cheapest solid VPS; ARM multi-arch images exist for pgvector and node; latency irrelevant for a long-polling Telegram bot |
+| Provider | Hetzner Cloud CPX11 (2 vCPU AMD x86, 2GB RAM, ~€4.5/mo), Ashburn or Hillsboro (US), Ubuntu 24.04 | Tyler wants US hosting (revised 2026-06-11 from CAX11/Falkenstein — ARM types are EU-only); 2GB is enough with a swapfile for build spikes; latency irrelevant for a long-polling Telegram bot |
 | Backups | Nightly `pg_dump` to VM disk + pull to Mac over Tailscale | Tyler chose to skip object storage for now; WAL-G upgrade path stays open |
 | Dev workflow | VM-only Telegram token; local dev via `npm run cli` against local DB | Avoids two-process long-poll conflicts (known gotcha); no second bot token to manage |
 | Architecture | All-Docker: both `db` and `agent` as compose services | Container is the sandbox boundary; `restart: unless-stopped` replaces systemd; simplest deploy story |
@@ -17,7 +17,7 @@
 
 Documented step-by-step in `docs/DEPLOY.md` (to be written during implementation).
 
-- Hetzner CAX11, Falkenstein, Ubuntu 24.04.
+- Hetzner CPX11 (x86), Ashburn or Hillsboro (US), Ubuntu 24.04, 2G swapfile.
 - Install Docker Engine + compose plugin, Tailscale.
 - **Network lockdown (zero inbound ports, matching existing security model):**
   - Hetzner Cloud Firewall: drop ALL inbound traffic. Tailscale needs only outbound (UDP 41641 / DERP fallback over 443).
