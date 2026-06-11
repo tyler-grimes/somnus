@@ -1,0 +1,17 @@
+# Secrets — must never enter the image
+.env
+
+# Rebuilt inside the image
+**/node_modules
+**/dist
+
+# Host-only / irrelevant to the agent image
+.git
+workspace
+research
+docs
+db
+tools
+ops
+*.md
+.claude
