@@ -40,6 +40,7 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
 
    # backups dir (ops/vm/backup.sh writes here as user somnus)
    mkdir -p /var/backups/somnus && chown somnus:somnus /var/backups/somnus
+   touch /var/log/somnus-backup.log && chown somnus:somnus /var/log/somnus-backup.log
    ```
 
 4. Lock SSH to Tailscale: in `/etc/ssh/sshd_config` set
@@ -63,6 +64,9 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
    ```
 
 ## 2. Get the repo onto the VM
+
+Exit the root session and reconnect as the service user: `ssh somnus@somnus-vm`.
+All remaining steps run as `somnus`.
 
 Private repo → read-only deploy key:
 
@@ -116,8 +120,8 @@ docker compose exec -T db pg_restore -U brain -d brain --clean --if-exists --no-
 # 4. Sanity: fact count should match the Mac's
 docker compose exec -T db psql -U brain -d brain -c "select count(*) from facts;"
 
-# 5. Clean up the dump copies
-rm /tmp/somnus-migration.dump   # on both machines
+# 5. Clean up the dump copies — run on the VM AND on the Mac
+rm /tmp/somnus-migration.dump
 ```
 
 ## 5. Start the agent + cron
