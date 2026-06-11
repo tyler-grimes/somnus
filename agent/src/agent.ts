@@ -11,6 +11,10 @@
  *  - Bash: every command requires Tyler's explicit approval via Telegram
  *    (Approve/Deny buttons), unless BASH_AUTO_APPROVE=true (container-only).
  *    Approval requests time out to deny; unreachable Telegram fails closed.
+ *    Approved commands execute inside an OS sandbox (see sandbox.ts): writes
+ *    only in the workspace, secret paths unreadable, env scrubbed. Host tools
+ *    (term.sh / cc.sh / tmux) run unsandboxed but are always human-gated —
+ *    automode and standing rules never cover them.
  *  - Everything else (web, subagents): denied until deliberately enabled.
  *  - settingSources: [] — no external Claude settings/hooks leak in.
  *  - Budget gate runs before every turn; spend is logged after.
@@ -22,6 +26,7 @@ import { config } from "./config.js";
 import { logEpisode, logSpend, pool, spentTodayUsd } from "./db.js";
 import { requestApproval } from "./approvals.js";
 import { skillsPromptSection } from "./skills.js";
+import { envScrubbedBash, sandboxSettings, scrubbedSubprocessEnv } from "./sandbox.js";
 
 const BRAIN_MCP_PATH = path.resolve(
   import.meta.dirname,
@@ -32,9 +37,24 @@ export const WORKSPACE_DIR =
   config.workspaceDir || path.resolve(import.meta.dirname, "../../workspace");
 fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
-/** Paths no tool may touch, ever. */
+/** Paths no tool may touch. A string match is a cheap pre-filter, not a
+ *  boundary — the OS sandbox in sandbox.ts is what actually stops reads of
+ *  these paths from Bash. This regex still covers Read/Glob/Grep. */
 const SENSITIVE_PATH_RE =
   /\.env|\/secrets\/|\.ssh\/|\.aws\/|\.gnupg\/|\.netrc|credentials|id_rsa|id_ed25519|\.pem\b|\.claude\.json/i;
+
+/** Host tools that cannot run inside the sandbox: term.sh/tmux need the tmux
+ *  server socket, cc.sh needs the claude CLI's real HOME. The trade: they are
+ *  always human-gated — automode, standing rules, and "Always" never cover
+ *  them (term.sh list / tmux list-* stay safe-listed; read-only inventory). */
+const HOST_TOOL_RE = /(^|[\s/;&|])(term\.sh|cc\.sh|tmux)(\s|$)/;
+
+/** Commands that can move data off the machine. Automode never auto-approves
+ *  these — exfiltration keeps a one-tap human confirm even when everything
+ *  else is auto (sandbox blocks secret reads, but workspace contents are
+ *  fair game to a poisoned instruction). */
+const NETWORK_BASH_RE =
+  /\b(curl|wget|nc|ncat|netcat|telnet|ssh|scp|sftp|rsync|ftp)\b|\bgit\s+(push|pull|fetch|clone)\b|\bnpm\s+(publish|install|ci|i)\b|\bpip3?\s+install\b|\bbrew\s+(install|upgrade)\b|\bopenssl\s+s_client\b/i;
 
 const READONLY_TOOLS = new Set(["Read", "Glob", "Grep", "TodoWrite", "BashOutput"]);
 const WORKSPACE_WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
@@ -72,9 +92,66 @@ async function decidePermission(
     return deny("That touches a sensitive path (secrets/keys) — blocked even in automode.");
   }
 
-  // Full autonomy: container env override or automode (button//auto on).
-  // Allows every tool, not just Bash — Write/Edit anywhere, web, the lot.
-  if (config.bashAutoApprove || Date.now() < autoApproveUntil) return allow;
+  const autoNow = config.bashAutoApprove || Date.now() < autoApproveUntil;
+
+  if (toolName === "KillShell") return allow;
+
+  if (toolName === "Bash") {
+    const command = bashCommand;
+    const hostTool = HOST_TOOL_RE.test(command);
+    // Sandboxed commands get the env-scrubbed wrapper and have any model-set
+    // dangerouslyDisableSandbox forcibly stripped; only the human-gated host
+    // tools run unsandboxed.
+    const allowBash = (): PermissionDecision =>
+      hostTool
+        ? { behavior: "allow", updatedInput: { ...input, dangerouslyDisableSandbox: true } }
+        : {
+            behavior: "allow",
+            updatedInput: {
+              ...input,
+              command: envScrubbedBash(command, WORKSPACE_DIR),
+              dangerouslyDisableSandbox: false,
+            },
+          };
+
+    // Plainly read-only commands — no pipes/redirects/substitution
+    if (SAFE_BASH_RE.test(command)) return allowBash();
+    if (!hostTool) {
+      // Layer 3: standing rules from the "Always" button — prefix match, so a
+      // rule made on `node /x/script.js` also covers `node /x/script.js --flag`
+      const rule = await pool.query(
+        `SELECT 1 FROM command_rules WHERE $1 LIKE pattern || '%' LIMIT 1`,
+        [command],
+      );
+      if (rule.rowCount) return allowBash();
+      // Automode covers sandboxed, non-network commands. Network-touching
+      // commands keep a one-tap confirm (container override excepted).
+      if (autoNow && (config.bashAutoApprove || !NETWORK_BASH_RE.test(command)))
+        return allowBash();
+    }
+    // Layer 4: ask Tyler
+    const decision = await requestApproval(`Bash command:\n\`\`\`\n${command}\n\`\`\``);
+    if (decision === "always") {
+      // Host tools never get standing rules — each invocation is one approval.
+      if (!hostTool) {
+        await pool
+          .query(`INSERT INTO command_rules (pattern) VALUES ($1) ON CONFLICT DO NOTHING`, [command])
+          .catch(() => {});
+      }
+      return allowBash();
+    }
+    if (decision === "auto") {
+      setAutoMode("on");
+      return allowBash();
+    }
+    return decision === "approve"
+      ? allowBash()
+      : deny("Tyler denied (or didn't approve) this command. Adjust or explain, don't retry verbatim.");
+  }
+
+  // Full autonomy for the remaining tools: container env override or automode
+  // (button//auto on) — Write/Edit anywhere, web, the lot.
+  if (autoNow) return allow;
 
   if (READONLY_TOOLS.has(toolName)) return allow;
 
@@ -85,35 +162,6 @@ async function decidePermission(
     return inWorkspace && paths.length > 0
       ? allow
       : deny(`Writes are restricted to the workspace: ${WORKSPACE_DIR}`);
-  }
-
-  if (toolName === "Bash" || toolName === "KillShell") {
-    if (toolName === "KillShell") return allow;
-    const command = bashCommand;
-    // Plainly read-only commands — no pipes/redirects/substitution
-    if (SAFE_BASH_RE.test(command)) return allow;
-    // Layer 3: standing rules from the "Always" button — prefix match, so a
-    // rule made on `node /x/script.js` also covers `node /x/script.js --flag`
-    const rule = await pool.query(
-      `SELECT 1 FROM command_rules WHERE $1 LIKE pattern || '%' LIMIT 1`,
-      [command],
-    );
-    if (rule.rowCount) return allow;
-    // Layer 4: ask Tyler
-    const decision = await requestApproval(`Bash command:\n\`\`\`\n${command}\n\`\`\``);
-    if (decision === "always") {
-      await pool
-        .query(`INSERT INTO command_rules (pattern) VALUES ($1) ON CONFLICT DO NOTHING`, [command])
-        .catch(() => {});
-      return allow;
-    }
-    if (decision === "auto") {
-      setAutoMode("on");
-      return allow;
-    }
-    return decision === "approve"
-      ? allow
-      : deny("Tyler denied (or didn't approve) this command. Adjust or explain, don't retry verbatim.");
   }
 
   return deny(`Tool ${toolName} is not enabled in this harness.`);
@@ -127,8 +175,12 @@ const SAFE_BASH_RE =
   /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|node --version|npm --version|tmux list-(panes|sessions|windows)\b[^|;&><`$\\]*|\S*\/term\.sh list)$|^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree)\b[^|;&><`$\\]*$/;
 
 /** Automode: every gated tool auto-approved until this timestamp.
- *  "on" = indefinite (until /auto off). Persisted in the settings table so it
- *  survives restarts. Sensitive-path blocklist still applies. */
+ *  "on" = AUTO_ON_CAP_MIN minutes — no longer indefinite; an unattended
+ *  forever-automode is exactly the condition under which a prompt-injected
+ *  command runs with no human anywhere in the loop. Persisted in the settings
+ *  table so it survives restarts. Sandbox + sensitive-path blocklist still
+ *  apply, and network/host-tool commands still ask. */
+const AUTO_ON_CAP_MIN = 240;
 let autoApproveUntil = 0;
 
 function persistAutoMode(): void {
@@ -151,14 +203,13 @@ export async function initPolicy(): Promise<void> {
 export function setAutoMode(arg: number | "on" | null): string {
   let msg: string;
   if (arg === "on") {
-    autoApproveUntil = Number.MAX_SAFE_INTEGER;
-    msg =
-      "🤖 Full automode ON — every tool call auto-approves until /auto off. Sensitive-path blocks still apply.";
+    autoApproveUntil = Date.now() + AUTO_ON_CAP_MIN * 60_000;
+    msg = `🤖 Full automode ON for ${AUTO_ON_CAP_MIN / 60}h (hard cap) — tool calls auto-approve, but network commands and host tools (term.sh/cc.sh/tmux) still ask. /auto off to stop early.`;
   } else if (!arg || arg <= 0) {
     autoApproveUntil = 0;
     msg = "Automode off — approvals required again.";
   } else {
-    const capped = Math.min(arg, 240);
+    const capped = Math.min(arg, AUTO_ON_CAP_MIN);
     autoApproveUntil = Date.now() + capped * 60_000;
     msg = `Automode on for ${capped} min — auto-approving until ${new Date(autoApproveUntil).toLocaleTimeString()}.`;
   }
@@ -166,7 +217,6 @@ export function setAutoMode(arg: number | "on" | null): string {
   return msg;
 }
 export function autoModeStatus(): string {
-  if (autoApproveUntil === Number.MAX_SAFE_INTEGER) return "🤖 Full automode ON (until /auto off).";
   const left = autoApproveUntil - Date.now();
   return left > 0 ? `Automode active, ${Math.ceil(left / 60_000)} min left.` : "Automode off.";
 }
@@ -232,6 +282,8 @@ ${skillsPromptSection()}
 You can read any file (except sensitive paths: .env, keys, credentials, .ssh, .aws). You can write and edit files inside the workspace at ${WORKSPACE_DIR}. You cannot modify your own harness code or the brain schema.
 
 Bash commands require Tyler's explicit approval via Telegram. Write each command so he can approve it in ten seconds: one logical action, no chained surprises. If denied, explain what you were trying to do and propose an alternative — never re-send the same command.
+
+Approved Bash runs inside an OS sandbox: writes only work inside the workspace, HOME points at the workspace, the environment is minimal (no API keys or tokens), and credential paths are unreadable. Commands that need the real host (term.sh, cc.sh, tmux) run outside the sandbox but always require Tyler's approval, even in automode — as do network-touching commands (curl, git push, installs).
 
 For real coding work in Tyler's repos (not workspace scratch), delegate to a Claude Code session instead of editing files yourself:
 - ${path.resolve(import.meta.dirname, "../../tools/cc.sh")} run <project-dir> "<task prompt>" — spawns a headless session, returns JSON with session_id, result, and cost. Write task prompts with full context: goal, constraints, how to verify.
@@ -303,6 +355,12 @@ export async function runAgentTurn(
         cwd: WORKSPACE_DIR,
         resume,
         settingSources: [],
+        // Layer 1: the subprocess that executes Bash never holds the Telegram
+        // token, DB credentials, or OpenAI key (sandbox.ts).
+        env: scrubbedSubprocessEnv(),
+        // Layer 3: OS sandbox around Bash. In the locked-down-container
+        // deployment the container itself is the boundary.
+        sandbox: sandboxSettings(WORKSPACE_DIR, !config.bashAutoApprove),
         mcpServers: {
           brain: {
             command: "node",
