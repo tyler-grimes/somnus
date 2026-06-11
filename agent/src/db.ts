@@ -33,11 +33,12 @@ export async function logSpend(s: {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  createdAt?: string;
 }): Promise<void> {
   await pool.query(
-    `INSERT INTO spend_log (model, purpose, input_tokens, output_tokens, cost_usd)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd],
+    `INSERT INTO spend_log (model, purpose, input_tokens, output_tokens, cost_usd, created_at)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))`,
+    [s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
   );
 }
 

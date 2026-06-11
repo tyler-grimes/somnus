@@ -32,7 +32,11 @@ run_claude() { # <dir> <prompt> [extra flags...]
   local out
   out=$(env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN \
     claude -p "$prompt" --output-format json --permission-mode acceptEdits \
-    "${model_args[@]}" "$@")
+    "${model_args[@]}" "$@") || {
+    local code=$?
+    echo "[cc.sh] claude exited $code — session failed (check token expiry / rate limits / flags)" >&2
+    exit "$code"
+  }
   printf '%s\n' "$out"
   # Spend spool — cc.sh has no DB access (DATABASE_URL is scrubbed from this
   # env on purpose); the scheduler sweeps this file into spend_log.
