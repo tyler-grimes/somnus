@@ -1,0 +1,30 @@
+# Second Brain — single-VM deployment
+# One Postgres holds everything: vectors, FTS, graph edges, facts, queue, logs.
+# Design: research/database-selection.md §6
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: brain
+      POSTGRES_USER: brain
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432" # localhost only; use Tailscale for remote access
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro # schema runs on first start
+    shm_size: "256mb"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain -d brain"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Later services (see research/README.md build order):
+  #   agent:       Claude Agent SDK runtime + Telegram bot (step 2)
+  #   wal-archive: WAL-G continuous archiving to object storage (before
+  #                real data accumulates)
+
+volumes:
+  pg_data:
