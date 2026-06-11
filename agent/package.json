@@ -8,6 +8,7 @@
     "build": "tsc",
     "dev": "node --env-file=../.env --import tsx src/index.ts",
     "start": "node --env-file=../.env dist/index.js",
+    "start:docker": "node dist/index.js",
     "cli": "node --env-file=../.env dist/cli.js"
   },
   "dependencies": {
