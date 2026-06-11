@@ -37,7 +37,12 @@ function chunk(text: string): string[] {
   return parts;
 }
 
-export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {}): Bot {
+export function createBot(
+  opts: {
+    onDreamRequested?: () => Promise<void>;
+    onBriefingRequested?: () => Promise<void>;
+  } = {},
+): Bot {
   const bot = new Bot(config.telegramBotToken);
   let droppedCount = 0;
 
@@ -98,6 +103,12 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
     }
     const id = setChatModel(arg);
     await ctx.reply(id ? `Chat model → ${id}` : `Unknown model "${arg}". Options: ${Object.keys(CHAT_MODELS).join(", ")}`);
+  });
+
+  // /brief — send the morning briefing now
+  bot.command("brief", async (ctx) => {
+    if (!opts.onBriefingRequested) return ctx.reply("Briefing not wired up.");
+    await opts.onBriefingRequested();
   });
 
   // /dream — manually trigger the nightly consolidation cycle

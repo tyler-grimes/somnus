@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import { pool } from "./db.js";
 import { createBot } from "./telegram.js";
 import { initPolicy } from "./agent.js";
-import { startScheduler, triggerDreamNow } from "./scheduler.js";
+import { startScheduler, triggerBriefingNow, triggerDreamNow } from "./scheduler.js";
 
 async function main(): Promise<void> {
   // Fail fast if the brain is unreachable — an agent without memory is worse
@@ -12,7 +12,10 @@ async function main(): Promise<void> {
   await initPolicy();
 
   const boss = await startScheduler();
-  const bot = createBot({ onDreamRequested: () => triggerDreamNow(boss) });
+  const bot = createBot({
+    onDreamRequested: () => triggerDreamNow(boss),
+    onBriefingRequested: () => triggerBriefingNow(boss),
+  });
 
   const shutdown = async (signal: string) => {
     console.log(`[boot] ${signal} received, stopping`);
