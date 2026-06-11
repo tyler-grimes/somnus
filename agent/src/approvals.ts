@@ -13,9 +13,11 @@ import { config } from "./config.js";
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
 
-const pending = new Map<string, (approved: boolean) => void>();
+export type ApprovalDecision = "approve" | "always" | "deny";
 
-export async function requestApproval(description: string): Promise<boolean> {
+const pending = new Map<string, (decision: ApprovalDecision) => void>();
+
+export async function requestApproval(description: string): Promise<ApprovalDecision> {
   const id = crypto.randomUUID().slice(0, 8);
 
   const res = await fetch(
@@ -29,7 +31,8 @@ export async function requestApproval(description: string): Promise<boolean> {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "✅ Approve", callback_data: `approve:${id}` },
+              { text: "✅ Once", callback_data: `approve:${id}` },
+              { text: "♻️ Always", callback_data: `always:${id}` },
               { text: "❌ Deny", callback_data: `deny:${id}` },
             ],
           ],
@@ -39,26 +42,26 @@ export async function requestApproval(description: string): Promise<boolean> {
   );
   if (!res.ok) {
     console.error("[approvals] failed to send request:", res.status, await res.text());
-    return false; // can't reach Tyler → fail closed
+    return "deny"; // can't reach Tyler → fail closed
   }
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<ApprovalDecision>((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      resolve(false); // timeout → fail closed
+      resolve("deny"); // timeout → fail closed
     }, APPROVAL_TIMEOUT_MS);
-    pending.set(id, (approved) => {
+    pending.set(id, (decision) => {
       clearTimeout(timer);
       pending.delete(id);
-      resolve(approved);
+      resolve(decision);
     });
   });
 }
 
 /** Called by the Telegram callback_query handler. Returns false if unknown/expired. */
-export function resolveApproval(id: string, approved: boolean): boolean {
+export function resolveApproval(id: string, decision: ApprovalDecision): boolean {
   const resolver = pending.get(id);
   if (!resolver) return false;
-  resolver(approved);
+  resolver(decision);
   return true;
 }

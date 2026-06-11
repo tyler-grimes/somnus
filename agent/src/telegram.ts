@@ -8,7 +8,14 @@
  */
 import { Bot } from "grammy";
 import { config } from "./config.js";
-import { CHAT_MODELS, getChatModel, runAgentTurn, setChatModel } from "./agent.js";
+import {
+  autoModeStatus,
+  CHAT_MODELS,
+  getChatModel,
+  runAgentTurn,
+  setAutoMode,
+  setChatModel,
+} from "./agent.js";
 import { logFriction } from "./db.js";
 import { resolveApproval } from "./approvals.js";
 
@@ -50,18 +57,27 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
   // middleware above already guarantees these come only from Tyler.
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
-    const match = /^(approve|deny):([a-f0-9-]+)$/.exec(data);
+    const match = /^(approve|always|deny):([a-f0-9-]+)$/.exec(data);
     if (!match) return ctx.answerCallbackQuery();
-    const approved = match[1] === "approve";
-    const known = resolveApproval(match[2], approved);
-    await ctx.answerCallbackQuery({
-      text: known ? (approved ? "Approved" : "Denied") : "Expired",
-    });
+    const decision = match[1] as "approve" | "always" | "deny";
+    const known = resolveApproval(match[2], decision);
+    const labels = { approve: "✅ approved", always: "♻️ always allowed", deny: "❌ denied" };
+    await ctx.answerCallbackQuery({ text: known ? labels[decision] : "Expired" });
     await ctx
       .editMessageText(
-        `${ctx.callbackQuery.message?.text ?? ""}\n\n${known ? (approved ? "✅ approved" : "❌ denied") : "⌛ expired"}`,
+        `${ctx.callbackQuery.message?.text ?? ""}\n\n${known ? labels[decision] : "⌛ expired"}`,
       )
       .catch(() => {});
+  });
+
+  // /auto — timed Bash automode: "/auto 30" (minutes), "/auto off", bare = status
+  bot.command("auto", async (ctx) => {
+    const arg = (ctx.match ?? "").trim().toLowerCase();
+    if (!arg) return ctx.reply(autoModeStatus());
+    if (arg === "off") return ctx.reply(setAutoMode(null));
+    const minutes = parseInt(arg, 10);
+    if (Number.isNaN(minutes)) return ctx.reply("Usage: /auto 30 | /auto off | /auto");
+    await ctx.reply(setAutoMode(minutes));
   });
 
   // /model — show or switch the chat model at runtime

@@ -168,6 +168,15 @@ CREATE INDEX friction_unresolved_idx ON friction_events (friction_type, created_
 CREATE INDEX friction_cluster_idx ON friction_events (cluster_id) WHERE cluster_id IS NOT NULL;
 
 -- ============================================================
+-- COMMAND RULES: Bash commands Tyler marked "always allow" (exact match)
+-- ============================================================
+CREATE TABLE command_rules (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pattern         TEXT UNIQUE NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
 -- SPEND LOG: model calls, token accounting, budget gate.
 -- Job queue itself is owned by pg-boss (auto-creates its own
 -- `pgboss` schema on first worker start) — job_id refers to

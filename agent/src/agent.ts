@@ -75,18 +75,53 @@ async function decidePermission(
 
   if (toolName === "Bash" || toolName === "KillShell") {
     if (toolName === "KillShell") return allow;
-    const command = typeof input.command === "string" ? input.command : "";
+    const command = (typeof input.command === "string" ? input.command : "").trim();
     if (SENSITIVE_PATH_RE.test(command)) {
       return deny("Command references a sensitive path.");
     }
+    // Layer 0: container deployment / explicit env override
     if (config.bashAutoApprove) return allow;
-    const approved = await requestApproval(`Bash command:\n\`\`\`\n${command}\n\`\`\``);
-    return approved
+    // Layer 1: timed automode (/auto N)
+    if (Date.now() < autoApproveUntil) return allow;
+    // Layer 2: plainly read-only commands — no pipes/redirects/substitution
+    if (SAFE_BASH_RE.test(command)) return allow;
+    // Layer 3: standing rules Tyler created with the "Always" button
+    const rule = await pool.query(`SELECT 1 FROM command_rules WHERE pattern = $1`, [command]);
+    if (rule.rowCount) return allow;
+    // Layer 4: ask Tyler
+    const decision = await requestApproval(`Bash command:\n\`\`\`\n${command}\n\`\`\``);
+    if (decision === "always") {
+      await pool
+        .query(`INSERT INTO command_rules (pattern) VALUES ($1) ON CONFLICT DO NOTHING`, [command])
+        .catch(() => {});
+      return allow;
+    }
+    return decision === "approve"
       ? allow
       : deny("Tyler denied (or didn't approve) this command. Adjust or explain, don't retry verbatim.");
   }
 
   return deny(`Tool ${toolName} is not enabled in this harness.`);
+}
+
+/** Read-only commands with no shell metacharacters: auto-allowed. */
+const SAFE_BASH_RE =
+  /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|env -i node --version|node --version|npm --version)\b[^|;&><`$\\]*$/;
+
+/** Timed automode: every Bash command auto-approved until this timestamp. */
+let autoApproveUntil = 0;
+export function setAutoMode(minutes: number | null): string {
+  if (!minutes || minutes <= 0) {
+    autoApproveUntil = 0;
+    return "Automode off — Bash approvals required again.";
+  }
+  const capped = Math.min(minutes, 240);
+  autoApproveUntil = Date.now() + capped * 60_000;
+  return `Automode on for ${capped} min — all Bash commands auto-approved until ${new Date(autoApproveUntil).toLocaleTimeString()}.`;
+}
+export function autoModeStatus(): string {
+  const left = autoApproveUntil - Date.now();
+  return left > 0 ? `Automode active, ${Math.ceil(left / 60_000)} min left.` : "Automode off.";
 }
 
 /** Letta-pattern always-in-context core blocks, rendered from the facts table.
