@@ -9,7 +9,8 @@
     "dev": "node --env-file=../.env --import tsx src/index.ts",
     "start": "node --env-file=../.env dist/index.js",
     "start:docker": "node dist/index.js",
-    "cli": "node --env-file=../.env dist/cli.js"
+    "cli": "node --env-file=../.env dist/cli.js",
+    "test": "node --env-file-if-exists=../.env --import tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
