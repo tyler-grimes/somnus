@@ -18,6 +18,7 @@ import {
 } from "./agent.js";
 import { logFriction } from "./db.js";
 import { resolveApproval } from "./approvals.js";
+import { activeSkills, approveSkill, pendingSkills, rejectSkill } from "./skills.js";
 
 const TELEGRAM_MAX_LEN = 4000;
 
@@ -103,6 +104,31 @@ export function createBot(
     }
     const id = setChatModel(arg);
     await ctx.reply(id ? `Chat model → ${id}` : `Unknown model "${arg}". Options: ${Object.keys(CHAT_MODELS).join(", ")}`);
+  });
+
+  // /skills — list; /skills approve <slug> | reject <slug>
+  bot.command("skills", async (ctx) => {
+    const [action, slug] = (ctx.match ?? "").trim().split(/\s+/);
+    if (action === "approve" && slug) {
+      return ctx.reply(
+        approveSkill(slug)
+          ? `✅ Skill "${slug}" activated — Somnus knows it next turn.`
+          : `No pending skill named "${slug}".`,
+      );
+    }
+    if (action === "reject" && slug) {
+      return ctx.reply(rejectSkill(slug) ? `🗑 Skill "${slug}" rejected.` : `No pending skill named "${slug}".`);
+    }
+    const active = activeSkills();
+    const pending = pendingSkills();
+    const lines = [
+      `Active (${active.length}):`,
+      ...active.map((s) => `• ${s.slug} — ${s.description}`),
+      `\nPending review (${pending.length}):`,
+      ...pending.map((s) => `• ${s.slug} — ${s.description}`),
+    ];
+    if (pending.length) lines.push(`\nApprove: /skills approve <slug>  ·  Reject: /skills reject <slug>`);
+    await ctx.reply(lines.join("\n"));
   });
 
   // /brief — send the morning briefing now

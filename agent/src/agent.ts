@@ -21,6 +21,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "./config.js";
 import { logEpisode, logSpend, pool, spentTodayUsd } from "./db.js";
 import { requestApproval } from "./approvals.js";
+import { skillsPromptSection } from "./skills.js";
 
 const BRAIN_MCP_PATH = path.resolve(
   import.meta.dirname,
@@ -226,7 +227,7 @@ You are responsible for faithful capture during conversation, not cleanup — co
 <core_memory>
 ${coreBlocks}
 </core_memory>
-
+${skillsPromptSection()}
 <coding>
 You can read any file (except sensitive paths: .env, keys, credentials, .ssh, .aws). You can write and edit files inside the workspace at ${WORKSPACE_DIR}. You cannot modify your own harness code or the brain schema.
 
