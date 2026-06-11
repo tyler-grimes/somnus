@@ -78,7 +78,7 @@ CREATE TABLE facts (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id        TEXT NOT NULL DEFAULT 'tyler',
   page_id         UUID REFERENCES pages(id) ON DELETE SET NULL,
-  kind            TEXT NOT NULL CHECK (kind IN ('event','preference','commitment','belief','fact','habit')),
+  kind            TEXT NOT NULL CHECK (kind IN ('event','preference','commitment','belief','fact','habit','persona')),
   claim           TEXT NOT NULL,
   valid_from      DATE,
   valid_until     DATE,                          -- NULL = still believed true

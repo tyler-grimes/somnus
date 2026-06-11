@@ -24,7 +24,7 @@ import { extractStructured } from "./llm.js";
 const SKILLS_PENDING_DIR = path.resolve(import.meta.dirname, "../../.claude/skills-pending");
 const EPISODE_WINDOW = "36 hours"; // > daily cadence; dedupe makes re-runs safe
 
-const FACT_KINDS = ["event", "preference", "commitment", "belief", "fact", "habit"] as const;
+const FACT_KINDS = ["event", "preference", "commitment", "belief", "fact", "habit", "persona"] as const;
 
 // ---------- Phase 1: extract facts ----------
 async function extractFacts(): Promise<string> {

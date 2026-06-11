@@ -81,7 +81,7 @@ server.tool(
   "remember_fact",
   "Store an atomic fact about the user or their world. Facts are bitemporal and append-only — to change one, use supersede_fact.",
   {
-    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit"]),
+    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit", "persona"]),
     claim: z.string().min(3).describe("One self-contained sentence"),
     valid_from: z.string().date().optional().describe("When this became true (YYYY-MM-DD)"),
     confidence: z.number().min(0).max(1).optional(),
@@ -104,7 +104,7 @@ server.tool(
   "Replace a fact that is no longer true: closes the old fact (keeps history) and stores the corrected one.",
   {
     old_fact_id: z.string().uuid(),
-    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit"]),
+    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit", "persona"]),
     new_claim: z.string().min(3),
     valid_from: z.string().date().optional(),
   },
