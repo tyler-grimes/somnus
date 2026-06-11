@@ -18,11 +18,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import pg from "pg";
 import { z } from "zod";
 import { embedText } from "./embeddings.js";
+import { resolveAudience, visibilityClause } from "./visibility.js";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   max: 5,
 });
+
+/** Who this server instance serves. The agent's own brain runs as 'owner';
+ *  any future share/export surface must set BRAIN_AUDIENCE=shared|world and
+ *  is filtered accordingly on every facts read. */
+const AUDIENCE = resolveAudience(process.env.BRAIN_AUDIENCE);
 
 const server = new McpServer({ name: "brain", version: "0.1.0" });
 
@@ -88,6 +94,7 @@ server.tool(
           `SELECT kind, claim, valid_from, valid_until, confidence
              FROM facts
             WHERE superseded_at IS NULL
+              AND (${visibilityClause(AUDIENCE)})
               AND (claim ILIKE '%' || $1 || '%' OR similarity(claim, $1) > 0.2
                    OR (embedding IS NOT NULL AND (embedding <=> $2::halfvec) < 0.55))
             ORDER BY COALESCE(1 - (embedding <=> $2::halfvec), 0) + similarity(claim, $1) DESC,
@@ -99,6 +106,7 @@ server.tool(
           `SELECT kind, claim, valid_from, valid_until, confidence
              FROM facts
             WHERE superseded_at IS NULL
+              AND (${visibilityClause(AUDIENCE)})
               AND (claim ILIKE '%' || $1 || '%' OR similarity(claim, $1) > 0.2)
             ORDER BY similarity(claim, $1) DESC, notability DESC
             LIMIT 6`,
@@ -139,14 +147,18 @@ server.tool(
     claim: z.string().min(3).describe("One self-contained sentence"),
     valid_from: z.string().date().optional().describe("When this became true (YYYY-MM-DD)"),
     confidence: z.number().min(0).max(1).optional(),
+    visibility: z
+      .enum(["private", "shared", "world"])
+      .optional()
+      .describe("Who may ever see this fact outside the owner's own agent (default: private)"),
   },
-  async ({ kind, claim, valid_from, confidence }) => {
+  async ({ kind, claim, valid_from, confidence, visibility }) => {
     const emb = await embedText(claim);
     const res = await pool.query(
-      `INSERT INTO facts (kind, claim, valid_from, confidence, source, embedding)
-       VALUES ($1, $2, $3, COALESCE($4, 0.8), 'mcp:remember_fact', $5::halfvec)
+      `INSERT INTO facts (kind, claim, valid_from, confidence, source, embedding, visibility)
+       VALUES ($1, $2, $3, COALESCE($4, 0.8), 'mcp:remember_fact', $5::halfvec, COALESCE($6, 'private'))
        RETURNING id`,
-      [kind, claim, valid_from ?? null, confidence ?? null, emb],
+      [kind, claim, valid_from ?? null, confidence ?? null, emb, visibility ?? null],
     );
     return {
       content: [{ type: "text" as const, text: `Stored fact ${res.rows[0].id}` }],
@@ -209,6 +221,7 @@ server.tool(
       `SELECT kind, claim
          FROM facts
         WHERE superseded_at IS NULL
+          AND (${visibilityClause(AUDIENCE)})
           AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)
           AND kind IN ('preference','commitment','belief','habit')
           AND confidence >= 0.7
