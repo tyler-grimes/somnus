@@ -91,6 +91,10 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
   // interleave writes to the brain or race the session.
   let inflight: Promise<void> = Promise.resolve();
 
+  // NOTE: this handler must NOT await the agent turn. grammY processes
+  // updates sequentially, so a handler that blocks on the turn would starve
+  // the callback_query updates that carry Bash approval taps — deadlocking
+  // every approval until timeout. The inflight chain still serializes turns.
   bot.on("message:text", (ctx) => {
     const text = ctx.message.text;
     inflight = inflight.then(async () => {
@@ -116,7 +120,7 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
         clearInterval(typing);
       }
     });
-    return inflight;
+    // fire-and-forget: see NOTE above
   });
 
   return bot;
