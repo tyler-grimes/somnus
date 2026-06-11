@@ -105,12 +105,16 @@ security record; don't suggest adopting external agent gateways.
 
 ## Ops runbook
 
-- Secrets in root `.env` (gitignored; template `.env.example`). All present
-  incl. TELEGRAM_*, ANTHROPIC_API_KEY, DATABASE_URL (literal password — node
-  --env-file does NO interpolation). OPENAI_API_KEY may still be missing —
-  check; it unlocks the vector arm.
-- Run: `docker compose up -d db`, then `cd agent && npm run build && npm
-  start` (Somnus usually lives in tmux pane `1:1.0`). CLI: `npm run cli`.
+- PRODUCTION = the VM (`ssh somnus-vm`, Tailscale only). Local Mac is dev
+  only: local `.env` has DUMMY Telegram vars (prod token lives only in VM
+  `.env`); local db (port 5433) is a dev sandbox snapshot as of migration.
+  Never run the prod bot locally.
+- Local secrets in root `.env` (gitignored; template `.env.example`);
+  DATABASE_URL needs a literal password — node --env-file does NO
+  interpolation. OPENAI_API_KEY present (vector arm live, both machines).
+- VM ops: deploy with `tools/deploy.sh`; logs `ssh somnus-vm 'cd ~/somnus &&
+  docker compose --profile agent logs -f --tail 100 agent'`. Local dev: CLI
+  via `cd agent && npm run cli` against local db.
 - Both packages build with `npm run build` (tsc). Keep builds green; commit
   per feature; push to origin (`git@github.com:tyler-grimes/somnus.git`).
 - DB poke: `docker compose exec -T db psql -U brain -d brain`.
@@ -131,11 +135,13 @@ Not done / next:
 3. Ingestion (deferred by Tyler — "nothing to ingest yet"): Google MCP
    (Gmail draft/label, Calendar full CRUD), Obsidian vault sync. Research in
    `research/gap-fill-letta-voice-ingestion.md` + main report §4.
-4. VM deployment (24/7/365 target): deployment artifacts DONE (Dockerfile,
-   compose `agent` service behind `--profile agent`, `tools/deploy.sh`,
-   backup scripts in `ops/`, runbook `docs/DEPLOY.md`) — remaining: provision
-   the Hetzner CPX11 (US — Ashburn/Hillsboro; x86) and execute the runbook. WAL-G/object storage
-   deliberately deferred (nightly pg_dump + Mac pull for now).
+4. VM deployment: **DONE 2026-06-11.** Somnus runs 24/7 on Hetzner CPX11
+   `somnus-vm` (Hillsboro, 5.78.45.62 public / 100.96.104.68 tailnet,
+   Ubuntu 26.04). Prod Telegram token lives ONLY there; local `.env` has
+   dummies so `npm run cli` still works. Backups: VM cron 04:30 →
+   `/var/backups/somnus` (keep 7), Mac launchd 09:00 pulls →
+   `~/Backups/somnus` (keep 30). Deploys: `tools/deploy.sh`. Runbook:
+   `docs/DEPLOY.md`. WAL-G/object storage still deferred.
 5. Skill outcome tracking/retirement (Ratchet pattern, research §3.4) —
    currently manual monthly review.
 

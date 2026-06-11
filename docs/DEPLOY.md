@@ -48,17 +48,23 @@ One-time provisioning + migration steps. Day-to-day deploys: `tools/deploy.sh`.
    touch /var/log/somnus-backup.log && chown somnus:somnus /var/log/somnus-backup.log
    ```
 
-4. Lock SSH to Tailscale: in `/etc/ssh/sshd_config` set
+4. Lock SSH to Tailscale. Ubuntu's sshd is **socket-activated** — a
+   `ListenAddress` in `sshd_config` is silently ignored; the bind lives on
+   `ssh.socket`. `FreeBind` lets the socket bind the Tailscale IP even if
+   tailscaled hasn't brought it up yet at boot (no boot-order race):
 
-   ```
-   ListenAddress <tailscale-100.x.y.z-ip>
-   PasswordAuthentication no
-   PermitRootLogin no
+   ```bash
+   mkdir -p /etc/systemd/system/ssh.socket.d
+   printf '[Socket]\nListenStream=\nListenStream=<tailscale-100.x.y.z-ip>:22\nFreeBind=true\n' \
+     > /etc/systemd/system/ssh.socket.d/tailscale-only.conf
+   printf 'PasswordAuthentication no\nPermitRootLogin no\n' \
+     > /etc/ssh/sshd_config.d/99-somnus-hardening.conf
+   systemctl daemon-reload && systemctl restart ssh.socket
    ```
 
-   then `systemctl restart ssh`. **Verify `ssh somnus@somnus-vm` works over
-   Tailscale BEFORE applying the deny-all firewall.** Once verified, apply the
-   firewall. From here the box has zero public ports.
+   **Verify `ssh somnus@somnus-vm` works over Tailscale BEFORE applying the
+   deny-all firewall.** Once verified, apply the firewall. From here the box
+   has zero public ports.
 
 5. Mac `~/.ssh/config`:
 
