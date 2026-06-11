@@ -10,6 +10,7 @@ import { Bot } from "grammy";
 import { config } from "./config.js";
 import { runAgentTurn } from "./agent.js";
 import { logFriction } from "./db.js";
+import { resolveApproval } from "./approvals.js";
 
 const TELEGRAM_MAX_LEN = 4000;
 
@@ -43,6 +44,24 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
       return; // no reply — don't reveal the bot is alive
     }
     await next();
+  });
+
+  // Approve/Deny buttons for gated tool calls (Bash). The allowlist
+  // middleware above already guarantees these come only from Tyler.
+  bot.on("callback_query:data", async (ctx) => {
+    const data = ctx.callbackQuery.data;
+    const match = /^(approve|deny):([a-f0-9-]+)$/.exec(data);
+    if (!match) return ctx.answerCallbackQuery();
+    const approved = match[1] === "approve";
+    const known = resolveApproval(match[2], approved);
+    await ctx.answerCallbackQuery({
+      text: known ? (approved ? "Approved" : "Denied") : "Expired",
+    });
+    await ctx
+      .editMessageText(
+        `${ctx.callbackQuery.message?.text ?? ""}\n\n${known ? (approved ? "✅ approved" : "❌ denied") : "⌛ expired"}`,
+      )
+      .catch(() => {});
   });
 
   // /dream — manually trigger the nightly consolidation cycle

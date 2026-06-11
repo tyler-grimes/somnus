@@ -23,6 +23,13 @@ export const config = {
    *  haiku/sonnet-for-background-agents preference. */
   dreamModel: process.env.DREAM_MODEL ?? "claude-sonnet-4-6",
   timezone: process.env.TZ ?? "America/Denver",
+  /** Scratch directory the agent may write to and run code in. */
+  workspaceDir: process.env.WORKSPACE_DIR ?? "",
+  /**
+   * Skip Telegram approval for Bash commands. Leave false on a host machine;
+   * set true only when the agent runs inside a locked-down container.
+   */
+  bashAutoApprove: process.env.BASH_AUTO_APPROVE === "true",
 };
 
 if (!Number.isInteger(config.telegramAllowedUserId) || config.telegramAllowedUserId <= 0) {

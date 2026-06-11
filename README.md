@@ -41,10 +41,15 @@ The bot answers only your Telegram user ID; everyone else is silently dropped.
 ## Security model
 
 Zero inbound ports (long-polling + localhost-bound Postgres) · hard single-user
-allowlist before any LLM call · agent tool surface restricted to brain MCP tools
-(no shell, no filesystem, no web) with `canUseTool` deny-by-default · isolated
-from user/project Claude settings (`settingSources: []`) · daily spend cap ·
-append-only episode audit log.
+allowlist before any LLM call · layered tool policy via `canUseTool`:
+brain MCP tools always allowed; Read/Glob/Grep allowed except sensitive paths
+(.env, secrets/, ssh/cloud keys — blocklisted everywhere, including inside Bash
+command strings); Write/Edit confined to `workspace/`; **every Bash command
+requires explicit Approve/Deny via Telegram** (fail-closed on timeout or
+unreachable Telegram; `BASH_AUTO_APPROVE=true` only for containerized
+deployment); web + subagents still denied · isolated from user/project Claude
+settings (`settingSources: []`) · daily spend cap · append-only episode audit
+log.
 
 ## Build order
 
