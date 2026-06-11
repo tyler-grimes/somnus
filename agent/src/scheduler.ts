@@ -6,9 +6,11 @@ import { PgBoss } from "pg-boss";
 import { config } from "./config.js";
 import { runDreamCycle } from "./dream.js";
 import { buildMorningBriefing } from "./briefing.js";
+import { sweepCcSpend } from "./ccspend.js";
 
 const DREAM_QUEUE = "dream-cycle";
 const BRIEFING_QUEUE = "morning-briefing";
+const CC_SPEND_QUEUE = "cc-spend-sweep";
 
 /** Proactive push to Tyler — raw Bot API call, no grammY instance needed. */
 export async function notifyTelegram(text: string): Promise<void> {
@@ -45,6 +47,14 @@ export async function startScheduler(): Promise<PgBoss> {
   await boss.work(BRIEFING_QUEUE, async () => {
     const briefing = await buildMorningBriefing();
     await notifyTelegram(briefing);
+  });
+
+  await boss.createQueue(CC_SPEND_QUEUE);
+  // Every 10 minutes: ingest cc.sh session costs spooled to the workspace
+  await boss.schedule(CC_SPEND_QUEUE, "*/10 * * * *", {}, { tz: config.timezone });
+  await boss.work(CC_SPEND_QUEUE, async () => {
+    const n = await sweepCcSpend();
+    if (n > 0) console.log(`[cc-spend] ingested ${n} session record(s)`);
   });
 
   console.log(
