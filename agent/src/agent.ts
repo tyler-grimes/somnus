@@ -33,7 +33,7 @@ fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
 /** Paths no tool may touch, ever. */
 const SENSITIVE_PATH_RE =
-  /\.env|\/secrets\/|\.ssh\/|\.aws\/|\.gnupg\/|\.netrc|credentials|id_rsa|id_ed25519|\.pem\b/i;
+  /\.env|\/secrets\/|\.ssh\/|\.aws\/|\.gnupg\/|\.netrc|credentials|id_rsa|id_ed25519|\.pem\b|\.claude\.json/i;
 
 const READONLY_TOOLS = new Set(["Read", "Glob", "Grep", "TodoWrite", "BashOutput"]);
 const WORKSPACE_WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
@@ -187,6 +187,12 @@ ${coreBlocks}
 You can read any file (except sensitive paths: .env, keys, credentials, .ssh, .aws). You can write and edit files inside the workspace at ${WORKSPACE_DIR}. You cannot modify your own harness code or the brain schema.
 
 Bash commands require Tyler's explicit approval via Telegram. Write each command so he can approve it in ten seconds: one logical action, no chained surprises. If denied, explain what you were trying to do and propose an alternative — never re-send the same command.
+
+For real coding work in Tyler's repos (not workspace scratch), delegate to a Claude Code session instead of editing files yourself:
+- ${path.resolve(import.meta.dirname, "../../tools/cc.sh")} run <project-dir> "<task prompt>" — spawns a headless session, returns JSON with session_id, result, and cost. Write task prompts with full context: goal, constraints, how to verify.
+- cc.sh resume <session-id> <project-dir> "<follow-up>" — continue a session you started; store session_ids with remember_fact when a project thread will continue across days.
+- cc.sh list — recent Claude Code projects on this machine; you can Read their JSONL transcripts under ~/.claude/projects/ to see what past sessions did.
+Each spawn is one Bash approval. For a burst of delegated work, suggest Tyler enable /auto.
 </coding>
 
 <style>
