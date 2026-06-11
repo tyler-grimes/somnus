@@ -106,9 +106,12 @@ async function decidePermission(
   return deny(`Tool ${toolName} is not enabled in this harness.`);
 }
 
-/** Read-only commands with no shell metacharacters: auto-allowed. */
+/** Read-only commands with no shell metacharacters: auto-allowed.
+ *  tmux list-panes is included (pane inventory is harmless); peek/send are
+ *  not — terminal contents can show secrets and send-keys types on Tyler's
+ *  keyboard, so both stay behind approval. */
 const SAFE_BASH_RE =
-  /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|env -i node --version|node --version|npm --version)\b[^|;&><`$\\]*$/;
+  /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|node --version|npm --version|tmux list-(panes|sessions|windows)\b[^|;&><`$\\]*|\S*\/term\.sh list)$|^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree)\b[^|;&><`$\\]*$/;
 
 /** Timed automode: every Bash command auto-approved until this timestamp. */
 let autoApproveUntil = 0;
@@ -193,6 +196,13 @@ For real coding work in Tyler's repos (not workspace scratch), delegate to a Cla
 - cc.sh resume <session-id> <project-dir> "<follow-up>" — continue a session you started; store session_ids with remember_fact when a project thread will continue across days.
 - cc.sh list — recent Claude Code projects on this machine; you can Read their JSONL transcripts under ~/.claude/projects/ to see what past sessions did.
 Each spawn is one Bash approval. For a burst of delegated work, suggest Tyler enable /auto.
+
+You can also control Tyler's live terminal sessions when they run inside tmux, via ${path.resolve(import.meta.dirname, "../../tools/term.sh")}:
+- term.sh list — every tmux pane with its running command and directory
+- term.sh peek <pane> [lines] — read a pane's recent output
+- term.sh send <pane> "<text>" — type into a pane (e.g. answer a Claude Code session's question, give it a new instruction)
+- term.sh keys <pane> Escape — interrupt; term.sh keys <pane> C-c — kill
+Etiquette: always peek before you send — confirm what's running and what state it's in. Never send destructive keys (C-c, C-d) without peeking first and telling Tyler what you saw. These are Tyler's own terminals: act like you're typing on his keyboard, because you are.
 </coding>
 
 <style>
