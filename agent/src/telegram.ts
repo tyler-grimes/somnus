@@ -64,23 +64,21 @@ export function createBot(
   });
 
   // Approve/Deny buttons for gated tool calls (Bash). The allowlist
-  // middleware above already guarantees these come only from Tyler.
+  // middleware above keeps strangers out; the HMAC inside the callback_data
+  // (verified by resolveApproval) is the second, independent layer — a
+  // token the server didn't mint resolves nothing.
   bot.on("callback_query:data", async (ctx) => {
-    const data = ctx.callbackQuery.data;
-    const match = /^(approve|always|auto|deny):([a-f0-9-]+)$/.exec(data);
-    if (!match) return ctx.answerCallbackQuery();
-    const decision = match[1] as "approve" | "always" | "auto" | "deny";
-    const known = resolveApproval(match[2], decision);
+    const decision = resolveApproval(ctx.callbackQuery.data);
     const labels = {
       approve: "✅ approved",
       always: "♻️ always allowed",
       auto: "🤖 full automode enabled",
       deny: "❌ denied",
     };
-    await ctx.answerCallbackQuery({ text: known ? labels[decision] : "Expired" });
+    await ctx.answerCallbackQuery({ text: decision ? labels[decision] : "Expired" });
     await ctx
       .editMessageText(
-        `${ctx.callbackQuery.message?.text ?? ""}\n\n${known ? labels[decision] : "⌛ expired"}`,
+        `${ctx.callbackQuery.message?.text ?? ""}\n\n${decision ? labels[decision] : "⌛ expired"}`,
       )
       .catch(() => {});
   });

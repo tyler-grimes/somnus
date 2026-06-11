@@ -32,7 +32,22 @@ export const config = {
    * set true only when the agent runs inside a locked-down container.
    */
   bashAutoApprove: process.env.BASH_AUTO_APPROVE === "true",
+  /**
+   * HMAC key for approval callback tokens (hex, 32+ bytes — `openssl rand
+   * -hex 32`). Distinct from the bot token, so a bot-token leak doesn't also
+   * leak the signing key. Optional: when unset, approvals.ts uses an
+   * ephemeral per-boot key.
+   */
+  approvalSigningSecret: process.env.APPROVAL_SIGNING_SECRET ?? "",
 };
+
+if (
+  config.approvalSigningSecret &&
+  (!/^[0-9a-fA-F]+$/.test(config.approvalSigningSecret) || config.approvalSigningSecret.length < 64)
+) {
+  console.error("APPROVAL_SIGNING_SECRET must be hex and at least 64 hex chars (32 bytes)");
+  process.exit(1);
+}
 
 if (!Number.isInteger(config.telegramAllowedUserId) || config.telegramAllowedUserId <= 0) {
   console.error("TELEGRAM_ALLOWED_USER_ID must be a positive integer (your numeric Telegram user id)");
