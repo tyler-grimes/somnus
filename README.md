@@ -1,4 +1,7 @@
-# adhd² — personal second brain
+# Somnus — personal second brain
+
+*Named for the Roman god of sleep: the system does its most important work at
+night, when the dream cycle consolidates the day into durable memory.*
 
 An always-on personal agent with a self-owned memory engine. The brain (single
 Postgres: vectors + full-text + typed-edge graph + bitemporal facts + job queue)

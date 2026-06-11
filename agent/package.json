@@ -1,9 +1,9 @@
 {
-  "name": "agent",
+  "name": "somnus-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Second-brain agent harness: Telegram gateway (long-polling, allowlisted) + Claude Agent SDK loop wired to brain-mcp.",
+  "description": "Somnus agent harness: Telegram gateway (long-polling, allowlisted) + Claude Agent SDK loop wired to brain-mcp.",
   "scripts": {
     "build": "tsc",
     "dev": "node --env-file=../.env --import tsx src/index.ts",

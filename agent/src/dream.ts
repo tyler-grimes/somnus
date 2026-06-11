@@ -299,7 +299,7 @@ export async function runDreamCycle(): Promise<string> {
     }
   }
 
-  const report = `🌙 Dream cycle complete\n${lines.map((l) => `• ${l}`).join("\n")}`;
+  const report = `🌙 Somnus dreamt\n${lines.map((l) => `• ${l}`).join("\n")}`;
   await logEpisode({ source: "dream_cycle", role: "system", content: report });
   return report;
 }
