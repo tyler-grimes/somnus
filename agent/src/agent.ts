@@ -190,45 +190,71 @@ export async function runAgentTurn(
 
   const coreBlocks = await renderCoreBlocks();
 
-  let resultText = "";
-  let costUsd = 0;
-  let inputTokens = 0;
-  let outputTokens = 0;
-
-  for await (const message of query({
-    prompt: userText,
-    options: {
-      model: currentChatModel,
-      systemPrompt: buildSystemPrompt(coreBlocks),
-      maxTurns: 30,
-      cwd: WORKSPACE_DIR,
-      resume: lastSessionId,
-      settingSources: [],
-      mcpServers: {
-        brain: {
-          command: "node",
-          args: [BRAIN_MCP_PATH],
-          env: { DATABASE_URL: config.databaseUrl },
+  const executeTurn = async (resume: string | undefined) => {
+    const turn = {
+      resultText: "",
+      costUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      sessionId: undefined as string | undefined,
+      success: false,
+    };
+    for await (const message of query({
+      prompt: userText,
+      options: {
+        model: currentChatModel,
+        systemPrompt: buildSystemPrompt(coreBlocks),
+        maxTurns: 30,
+        cwd: WORKSPACE_DIR,
+        resume,
+        settingSources: [],
+        mcpServers: {
+          brain: {
+            command: "node",
+            args: [BRAIN_MCP_PATH],
+            env: { DATABASE_URL: config.databaseUrl },
+          },
         },
+        // Nothing is pre-approved except brain tools — every other call goes
+        // through decidePermission, including Bash (Telegram approval).
+        allowedTools: ["mcp__brain__*"],
+        canUseTool: (toolName, input) => decidePermission(toolName, input),
       },
-      // Nothing is pre-approved except brain tools — every other call goes
-      // through decidePermission, including Bash (Telegram approval).
-      allowedTools: ["mcp__brain__*"],
-      canUseTool: (toolName, input) => decidePermission(toolName, input),
-    },
-  })) {
-    if (message.type === "result") {
-      if (message.subtype === "success") {
-        resultText = message.result ?? "";
-      } else {
-        resultText = `Turn ended without a clean result (${message.subtype}).`;
+    })) {
+      if (message.type === "result") {
+        if (message.subtype === "success") {
+          turn.resultText = message.result ?? "";
+          turn.success = true;
+        } else {
+          turn.resultText = `Turn ended without a clean result (${message.subtype}).`;
+        }
+        turn.costUsd = message.total_cost_usd ?? 0;
+        turn.inputTokens = message.usage?.input_tokens ?? 0;
+        turn.outputTokens = message.usage?.output_tokens ?? 0;
+        turn.sessionId = message.session_id;
       }
-      costUsd = message.total_cost_usd ?? 0;
-      inputTokens = message.usage?.input_tokens ?? 0;
-      outputTokens = message.usage?.output_tokens ?? 0;
-      lastSessionId = message.session_id;
     }
+    return turn;
+  };
+
+  let turn;
+  try {
+    turn = await executeTurn(lastSessionId);
+  } catch (err) {
+    const stale =
+      lastSessionId &&
+      err instanceof Error &&
+      /No conversation found with session ID/i.test(err.message);
+    if (!stale) throw err;
+    console.warn(`[agent] session ${lastSessionId} is stale — retrying fresh`);
+    lastSessionId = undefined;
+    turn = await executeTurn(undefined);
   }
+  // Only trust session ids from clean turns — failed turns may never have
+  // been persisted by the SDK, and resuming them errors the next turn.
+  if (turn.success && turn.sessionId) lastSessionId = turn.sessionId;
+
+  const { resultText, costUsd, inputTokens, outputTokens } = turn;
 
   await logEpisode({
     source,
