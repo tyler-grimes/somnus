@@ -4,10 +4,11 @@
  */
 import readline from "node:readline/promises";
 import { pool } from "./db.js";
-import { runAgentTurn } from "./agent.js";
+import { initPolicy, runAgentTurn } from "./agent.js";
 
 async function main(): Promise<void> {
   await pool.query("SELECT 1");
+  await initPolicy();
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   console.log("somnus CLI — empty line or Ctrl-C to exit\n");
 

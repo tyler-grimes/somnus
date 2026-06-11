@@ -168,7 +168,16 @@ CREATE INDEX friction_unresolved_idx ON friction_events (friction_type, created_
 CREATE INDEX friction_cluster_idx ON friction_events (cluster_id) WHERE cluster_id IS NOT NULL;
 
 -- ============================================================
--- COMMAND RULES: Bash commands Tyler marked "always allow" (exact match)
+-- SETTINGS: small persisted runtime state (automode, etc.)
+-- ============================================================
+CREATE TABLE settings (
+  key             TEXT PRIMARY KEY,
+  value           TEXT NOT NULL,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- COMMAND RULES: Bash commands Tyler marked "always allow" (prefix match)
 -- ============================================================
 CREATE TABLE command_rules (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

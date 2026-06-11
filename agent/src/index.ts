@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { pool } from "./db.js";
 import { createBot } from "./telegram.js";
+import { initPolicy } from "./agent.js";
 import { startScheduler, triggerDreamNow } from "./scheduler.js";
 
 async function main(): Promise<void> {
@@ -8,6 +9,7 @@ async function main(): Promise<void> {
   // than no agent.
   await pool.query("SELECT 1");
   console.log("[boot] brain reachable");
+  await initPolicy();
 
   const boss = await startScheduler();
   const bot = createBot({ onDreamRequested: () => triggerDreamNow(boss) });

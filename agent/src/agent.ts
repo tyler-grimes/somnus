@@ -59,10 +59,21 @@ async function decidePermission(
 
   if (toolName.startsWith("mcp__brain__")) return allow;
 
+  // Sensitive-path blocklist is absolute — it applies before and during
+  // automode, on file paths and inside Bash command strings alike.
   const paths = pathsFromInput(input);
-  if (paths.some((p) => SENSITIVE_PATH_RE.test(p))) {
-    return deny("That path is on the sensitive-path blocklist.");
+  const bashCommand =
+    toolName === "Bash" && typeof input.command === "string" ? input.command.trim() : "";
+  if (
+    paths.some((p) => SENSITIVE_PATH_RE.test(p)) ||
+    (bashCommand && SENSITIVE_PATH_RE.test(bashCommand))
+  ) {
+    return deny("That touches a sensitive path (secrets/keys) — blocked even in automode.");
   }
+
+  // Full autonomy: container env override or automode (button//auto on).
+  // Allows every tool, not just Bash — Write/Edit anywhere, web, the lot.
+  if (config.bashAutoApprove || Date.now() < autoApproveUntil) return allow;
 
   if (READONLY_TOOLS.has(toolName)) return allow;
 
@@ -77,15 +88,8 @@ async function decidePermission(
 
   if (toolName === "Bash" || toolName === "KillShell") {
     if (toolName === "KillShell") return allow;
-    const command = (typeof input.command === "string" ? input.command : "").trim();
-    if (SENSITIVE_PATH_RE.test(command)) {
-      return deny("Command references a sensitive path.");
-    }
-    // Layer 0: container deployment / explicit env override
-    if (config.bashAutoApprove) return allow;
-    // Layer 1: timed automode (/auto N)
-    if (Date.now() < autoApproveUntil) return allow;
-    // Layer 2: plainly read-only commands — no pipes/redirects/substitution
+    const command = bashCommand;
+    // Plainly read-only commands — no pipes/redirects/substitution
     if (SAFE_BASH_RE.test(command)) return allow;
     // Layer 3: standing rules from the "Always" button — prefix match, so a
     // rule made on `node /x/script.js` also covers `node /x/script.js --flag`
@@ -121,21 +125,44 @@ async function decidePermission(
 const SAFE_BASH_RE =
   /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|node --version|npm --version|tmux list-(panes|sessions|windows)\b[^|;&><`$\\]*|\S*\/term\.sh list)$|^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree)\b[^|;&><`$\\]*$/;
 
-/** Automode: every Bash command auto-approved until this timestamp.
- *  "on" = indefinite (until /auto off). Sensitive-path blocklist still applies. */
+/** Automode: every gated tool auto-approved until this timestamp.
+ *  "on" = indefinite (until /auto off). Persisted in the settings table so it
+ *  survives restarts. Sensitive-path blocklist still applies. */
 let autoApproveUntil = 0;
+
+function persistAutoMode(): void {
+  pool
+    .query(
+      `INSERT INTO settings (key, value) VALUES ('auto_approve_until', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+      [String(autoApproveUntil)],
+    )
+    .catch((err) => console.error("[automode] persist failed:", err));
+}
+
+/** Call once at boot — restores automode across restarts. */
+export async function initPolicy(): Promise<void> {
+  const res = await pool.query(`SELECT value FROM settings WHERE key = 'auto_approve_until'`);
+  autoApproveUntil = res.rowCount ? Number(res.rows[0].value) || 0 : 0;
+  if (Date.now() < autoApproveUntil) console.log(`[automode] restored: ${autoModeStatus()}`);
+}
+
 export function setAutoMode(arg: number | "on" | null): string {
+  let msg: string;
   if (arg === "on") {
     autoApproveUntil = Number.MAX_SAFE_INTEGER;
-    return "🤖 Full automode ON — every Bash command auto-approves until /auto off. Sensitive-path blocks still apply.";
-  }
-  if (!arg || arg <= 0) {
+    msg =
+      "🤖 Full automode ON — every tool call auto-approves until /auto off. Sensitive-path blocks still apply.";
+  } else if (!arg || arg <= 0) {
     autoApproveUntil = 0;
-    return "Automode off — Bash approvals required again.";
+    msg = "Automode off — approvals required again.";
+  } else {
+    const capped = Math.min(arg, 240);
+    autoApproveUntil = Date.now() + capped * 60_000;
+    msg = `Automode on for ${capped} min — auto-approving until ${new Date(autoApproveUntil).toLocaleTimeString()}.`;
   }
-  const capped = Math.min(arg, 240);
-  autoApproveUntil = Date.now() + capped * 60_000;
-  return `Automode on for ${capped} min — all Bash commands auto-approved until ${new Date(autoApproveUntil).toLocaleTimeString()}.`;
+  persistAutoMode();
+  return msg;
 }
 export function autoModeStatus(): string {
   if (autoApproveUntil === Number.MAX_SAFE_INTEGER) return "🤖 Full automode ON (until /auto off).";
