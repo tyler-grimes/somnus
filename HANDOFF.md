@@ -131,9 +131,11 @@ Not done / next:
 3. Ingestion (deferred by Tyler — "nothing to ingest yet"): Google MCP
    (Gmail draft/label, Calendar full CRUD), Obsidian vault sync. Research in
    `research/gap-fill-letta-voice-ingestion.md` + main report §4.
-4. VM deployment (24/7/365 target): containerize agent (compose `agent`
-   service stubbed), `BASH_AUTO_APPROVE=true` only inside container, WAL-G
-   backups to object storage before real data accumulates further.
+4. VM deployment (24/7/365 target): deployment artifacts DONE (Dockerfile,
+   compose `agent` service behind `--profile agent`, `tools/deploy.sh`,
+   backup scripts in `ops/`, runbook `docs/DEPLOY.md`) — remaining: provision
+   the Hetzner CAX11 and execute the runbook. WAL-G/object storage
+   deliberately deferred (nightly pg_dump + Mac pull for now).
 5. Skill outcome tracking/retirement (Ratchet pattern, research §3.4) —
    currently manual monthly review.
 
