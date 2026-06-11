@@ -13,7 +13,7 @@ import { config } from "./config.js";
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
 
-export type ApprovalDecision = "approve" | "always" | "deny";
+export type ApprovalDecision = "approve" | "always" | "auto" | "deny";
 
 const pending = new Map<string, (decision: ApprovalDecision) => void>();
 
@@ -33,6 +33,9 @@ export async function requestApproval(description: string): Promise<ApprovalDeci
             [
               { text: "✅ Once", callback_data: `approve:${id}` },
               { text: "♻️ Always", callback_data: `always:${id}` },
+            ],
+            [
+              { text: "🤖 Full auto", callback_data: `auto:${id}` },
               { text: "❌ Deny", callback_data: `deny:${id}` },
             ],
           ],
@@ -61,6 +64,9 @@ export async function requestApproval(description: string): Promise<ApprovalDeci
 /** Called by the Telegram callback_query handler. Returns false if unknown/expired. */
 export function resolveApproval(id: string, decision: ApprovalDecision): boolean {
   const resolver = pending.get(id);
+  console.log(
+    `[approvals] callback id=${id} decision=${decision} known=${Boolean(resolver)} pending=${pending.size}`,
+  );
   if (!resolver) return false;
   resolver(decision);
   return true;

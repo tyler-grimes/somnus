@@ -57,11 +57,16 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
   // middleware above already guarantees these come only from Tyler.
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
-    const match = /^(approve|always|deny):([a-f0-9-]+)$/.exec(data);
+    const match = /^(approve|always|auto|deny):([a-f0-9-]+)$/.exec(data);
     if (!match) return ctx.answerCallbackQuery();
-    const decision = match[1] as "approve" | "always" | "deny";
+    const decision = match[1] as "approve" | "always" | "auto" | "deny";
     const known = resolveApproval(match[2], decision);
-    const labels = { approve: "✅ approved", always: "♻️ always allowed", deny: "❌ denied" };
+    const labels = {
+      approve: "✅ approved",
+      always: "♻️ always allowed",
+      auto: "🤖 full automode enabled",
+      deny: "❌ denied",
+    };
     await ctx.answerCallbackQuery({ text: known ? labels[decision] : "Expired" });
     await ctx
       .editMessageText(
@@ -70,13 +75,15 @@ export function createBot(opts: { onDreamRequested?: () => Promise<void> } = {})
       .catch(() => {});
   });
 
-  // /auto — timed Bash automode: "/auto 30" (minutes), "/auto off", bare = status
+  // /auto — Bash automode: "/auto on" (indefinite), "/auto 30" (minutes),
+  // "/auto off", bare = status
   bot.command("auto", async (ctx) => {
     const arg = (ctx.match ?? "").trim().toLowerCase();
     if (!arg) return ctx.reply(autoModeStatus());
     if (arg === "off") return ctx.reply(setAutoMode(null));
+    if (arg === "on") return ctx.reply(setAutoMode("on"));
     const minutes = parseInt(arg, 10);
-    if (Number.isNaN(minutes)) return ctx.reply("Usage: /auto 30 | /auto off | /auto");
+    if (Number.isNaN(minutes)) return ctx.reply("Usage: /auto on | /auto 30 | /auto off | /auto");
     await ctx.reply(setAutoMode(minutes));
   });
 
