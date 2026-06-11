@@ -19,8 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
 # Claude Code CLI for cc.sh headless sessions (subscription-authed at runtime
-# via CLAUDE_CODE_OAUTH_TOKEN; no API key in session env)
-RUN npm install -g @anthropic-ai/claude-code
+# via CLAUDE_CODE_OAUTH_TOKEN; no API key in session env). Pinned: cc.sh
+# parses the JSON output (session_id, total_cost_usd) — bump deliberately.
+RUN npm install -g @anthropic-ai/claude-code@2.1.173
 WORKDIR /app
 COPY brain-mcp/package.json brain-mcp/package-lock.json brain-mcp/
 COPY agent/package.json agent/package-lock.json agent/
