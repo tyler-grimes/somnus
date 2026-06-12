@@ -71,13 +71,14 @@ verification results).
   - `briefing.ts`, `llm.ts` (direct Anthropic SDK + zod structured outputs +
     spend logging), `embeddings.ts`, `db.ts`, `config.ts`, `cli.ts`
     (`npm run cli`), `index.ts` (boot: initPolicy → scheduler → bot).
-- `tools/cc.sh` + `tools/term.sh` — Mac-only host tools (headless CC sessions /
-  tmux control), NOT shipped in the image. The container variant is
-  `agent/tools/cc.sh` (clone/run/resume/list/push): subscription-billed
-  sessions via CLAUDE_CODE_OAUTH_TOKEN, GitHub PAT only visible to
-  clone/push, costs spooled to workspace and swept to spend_log every 10
-  min. ALL cc.sh/term.sh/tmux invocations are ALWAYS human-gated, never
-  covered by automode or standing rules.
+- `tools/cc.sh` + `tools/term.sh` + `tools/term-bridge.sh` — Mac host tools.
+  `term-bridge.sh` is the SSH forced-command that lets the VM drive the Mac's
+  tmux: the container's `agent/tools/term.sh` SSHes over Tailscale with a
+  dedicated key (host file `/home/somnus/.ssh/term-bridge`, bind-mounted ro),
+  and the Mac authorized_keys entry pins term-bridge.sh which allow-lists
+  list|peek|send|keys → real term.sh. `agent/tools/cc.sh` = in-container
+  Claude Code sessions (see its own notes). ALL cc.sh/term.sh/tmux calls are
+  ALWAYS human-gated, never automode or standing rules. Setup: DEPLOY.md §9.
 - `workspace/` — agent's scratch dir (gitignored); `workspace/inbox/` receives
   Telegram uploads.
 

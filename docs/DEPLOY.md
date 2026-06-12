@@ -216,3 +216,40 @@ Verification:
 - `docker compose restart agent`, then ask Somnus to `cc.sh resume` the
   earlier session — the claude_state volume should keep it. (If resume fails,
   check `docker volume ls | grep claude_state`.)
+
+## 9. Term bridge — control the Mac's tmux from Somnus
+
+Somnus can drive the Mac's tmux Claude Code sessions via `/app/agent/tools/term.sh`
+(every call Telegram-gated). One-time setup:
+
+1. **Generate the keypair** (run from the Mac repo):
+   ```bash
+   ssh-keygen -t ed25519 -f /tmp/somnus-term-bridge -N "" -C "somnus-term-bridge"
+   ```
+2. **Stage the private key on the VM** (host file, never in .env/image):
+   ```bash
+   scp /tmp/somnus-term-bridge somnus-vm:/home/somnus/.ssh/term-bridge
+   ssh somnus-vm 'chmod 600 /home/somnus/.ssh/term-bridge'
+   ```
+3. **Authorize the public key on the Mac** — append ONE line to
+   `~/.ssh/authorized_keys` (replace `<PUBKEY>` with the contents of
+   `/tmp/somnus-term-bridge.pub`):
+   ```
+   command="/Users/tylergrimes/adhd_squared/tools/term-bridge.sh",from="100.96.104.68",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty <PUBKEY>
+   ```
+4. **Enable Remote Login on the Mac:** `sudo systemsetup -setremotelogin on`
+   (or System Settings → General → Sharing → Remote Login).
+5. **Delete the temp keypair from the Mac:** `rm /tmp/somnus-term-bridge*`
+6. **Add Mac coordinates to the VM `.env`** (compose has defaults, but make them
+   explicit):
+   ```
+   MAC_SSH_HOST=100.83.186.28
+   MAC_SSH_USER=tylergrimes
+   ```
+7. **Roll the image:** `tools/deploy.sh`
+
+Verify: ask Somnus (Telegram) to run `term.sh list` — expect an approval prompt,
+then your Mac's panes. From the VM, `ssh -i /home/somnus/.ssh/term-bridge
+tylergrimes@100.83.186.28 "whoami"` must be REFUSED by the forced command.
+
+Revoke anytime: delete the `authorized_keys` line on the Mac.
