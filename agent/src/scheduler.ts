@@ -8,11 +8,13 @@ import { runDreamCycle } from "./dream.js";
 import { buildMorningBriefing } from "./briefing.js";
 import { sweepCcSpend } from "./ccspend.js";
 import { ingestNewSessions } from "./cc-ingest.js";
+import { runGapAnalysis } from "./gap-analysis.js";
 
 const DREAM_QUEUE = "dream-cycle";
 const BRIEFING_QUEUE = "morning-briefing";
 const CC_SPEND_QUEUE = "cc-spend-sweep";
 const CC_INGEST_QUEUE = "cc-ingest-sweep";
+const GAP_ANALYSIS_QUEUE = "gap-analysis";
 
 /** Proactive push to Tyler — raw Bot API call, no grammY instance needed. */
 export async function notifyTelegram(text: string): Promise<void> {
@@ -67,8 +69,23 @@ export async function startScheduler(): Promise<PgBoss> {
     if (n > 0) console.log(`[cc-ingest] ingested ${n} session transcript(s)`);
   });
 
+  await boss.createQueue(GAP_ANALYSIS_QUEUE);
+  // Nightly at 03:00 — runs before the 04:00 dream cycle so the dream can absorb gap findings
+  await boss.schedule(GAP_ANALYSIS_QUEUE, "0 3 * * *", {}, { tz: config.timezone, singletonKey: "gap-analysis" });
+  await boss.work(GAP_ANALYSIS_QUEUE, async () => {
+    console.log("[gap-analysis] starting");
+    try {
+      const result = await runGapAnalysis();
+      console.log(
+        `[gap-analysis] done — ${result.gapsFound} gaps found, ${result.researched} researched, ${result.highPriority} high-priority, telegram: ${result.telegramSent}`,
+      );
+    } catch (err) {
+      console.error("[gap-analysis] job failed:", err);
+    }
+  });
+
   console.log(
-    `[boot] scheduler up — dream cycle 04:00, briefing 08:00 ${config.timezone}`,
+    `[boot] scheduler up — dream cycle 04:00, gap analysis 03:00, briefing 08:00 ${config.timezone}`,
   );
   return boss;
 }
@@ -79,4 +96,8 @@ export async function triggerBriefingNow(boss: PgBoss): Promise<void> {
 
 export async function triggerDreamNow(boss: PgBoss): Promise<void> {
   await boss.send(DREAM_QUEUE, {}, { singletonKey: "manual-dream" });
+}
+
+export async function triggerGapAnalysisNow(boss: PgBoss): Promise<void> {
+  await boss.send(GAP_ANALYSIS_QUEUE, {}, { singletonKey: "gap-analysis" });
 }
