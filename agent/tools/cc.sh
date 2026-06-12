@@ -20,6 +20,16 @@ SPOOL="${CC_SPEND_SPOOL:-/app/workspace/.cc-spend.jsonl}"
 ASKPASS="$(cd "$(dirname "$0")" && pwd)/git-askpass.sh"
 DEFAULT_MODEL="claude-sonnet-4-6"
 
+# The harness strips credential env vars from Bash children; the agent boot
+# writes them to this 0600 file instead (index.ts writeCcCredentials).
+CRED_FILE="${CC_CRED_FILE:-$HOME/.claude/.somnus-credentials}"
+if [ -r "$CRED_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$CRED_FILE"
+  set +a
+fi
+
 # Fine-grained PATs are per-resource-owner: GITHUB_TOKEN is the default
 # (Tyler's personal repos); GITHUB_TOKEN_<OWNER> overrides per owner
 # (e.g. GITHUB_TOKEN_NEUROTIME for the neurotime org).

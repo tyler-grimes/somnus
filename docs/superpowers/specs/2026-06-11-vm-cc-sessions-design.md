@@ -60,6 +60,13 @@ Two new VM-only `.env` entries (never on the Mac, never in git):
   vars; cc.sh selects by repo owner, falls back to `GITHUB_TOKEN`. Sessions
   see none of the `GITHUB_TOKEN*` vars.
 - `CLAUDE_CODE_OAUTH_TOKEN` — minted once on Tyler's Mac with `claude setup-token` (browser OAuth, ~1-year expiry, revocable at claude.ai settings). Same env-layering treatment as the PAT.
+- Amended 2026-06-11 (post-deploy bug): Claude Code strips credential env
+  vars from Bash children, so cc.sh cannot inherit the tokens through the
+  harness. The agent writes them to `~/.claude/.somnus-credentials` (0600)
+  at boot; cc.sh sources it. The filename deliberately matches
+  SENSITIVE_PATH_RE ("credentials") so the agent itself cannot Read it.
+  Net exposure unchanged: same-UID processes could already read
+  /proc/<agent>/environ.
 
 Accepted trade (documented, approved): both tokens are Tyler-account
 credentials living in the container, same exposure class as the existing
