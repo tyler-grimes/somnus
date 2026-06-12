@@ -21,6 +21,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot schema migrator: applies db/init/*.sql once each (tracked in
+  # schema_migrations) before agent/dashboard start, so new migrations no
+  # longer need a manual psql. Exits 0; agent/dashboard gate on its success.
+  migrate:
+    image: pgvector/pgvector:pg17
+    profiles: ["agent"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: brain
+      PGDATABASE: brain
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./db/init:/migrations:ro
+      - ./db/migrate.sh:/migrate.sh:ro
+    entrypoint: ["bash", "/migrate.sh"]
+
   # Agent runtime: Telegram bot + Claude Agent SDK + brain-mcp (spawned via
   # stdio inside this container). Opt-in profile so local `up -d` on the Mac
   # can never start a second long-poll consumer — only the VM runs
@@ -32,6 +52,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       # The container IS the sandbox boundary (design spec §2). This flips
@@ -53,6 +75,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       # Bind the Tailscale IP only (DASHBOARD_BIND in VM .env), not 0.0.0.0:
       # the firewall is defense-in-depth, never the sole boundary.
