@@ -54,7 +54,9 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "3001:3001" # Tailscale-accessible; keep port 3001 blocked in Hetzner firewall for public internet
+      # Bind the Tailscale IP only (DASHBOARD_BIND in VM .env), not 0.0.0.0:
+      # the firewall is defense-in-depth, never the sole boundary.
+      - "${DASHBOARD_BIND:-127.0.0.1}:3001:3001"
     environment:
       DATABASE_URL: postgres://brain:${DB_PASSWORD}@db:5432/brain
       TZ: ${TZ:-America/Denver}
