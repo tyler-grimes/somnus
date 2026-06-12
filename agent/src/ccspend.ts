@@ -7,8 +7,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { logSpend } from "./db.js";
-import { config } from "./config.js";
 
 export interface SpoolEntry {
   ts: string;
@@ -16,11 +14,6 @@ export interface SpoolEntry {
   session_id: string | null;
   dir: string;
 }
-
-const SPOOL_PATH = path.join(
-  config.workspaceDir || path.resolve(import.meta.dirname, "../../workspace"),
-  ".cc-spend.jsonl",
-);
 
 export function parseSpoolLines(raw: string): SpoolEntry[] {
   const entries: SpoolEntry[] = [];
@@ -47,8 +40,14 @@ export function parseSpoolLines(raw: string): SpoolEntry[] {
  *  .ingest file (crash between rename and unlink) is recovered first;
  *  individual failed rows are logged and dropped; a wholesale failure (DB
  *  down) keeps the file for retry. */
-export async function sweepCcSpend(spoolPath: string = SPOOL_PATH): Promise<number> {
-  const ingestPath = spoolPath + ".ingest";
+export async function sweepCcSpend(spoolPath?: string): Promise<number> {
+  const { logSpend } = await import("./db.js");
+  const { config } = await import("./config.js");
+  const resolvedPath = spoolPath ?? path.join(
+    config.workspaceDir || path.resolve(import.meta.dirname, "../../workspace"),
+    ".cc-spend.jsonl",
+  );
+  const ingestPath = resolvedPath + ".ingest";
   let ingested = 0;
 
   const ingestFile = async (file: string): Promise<void> => {
@@ -80,8 +79,8 @@ export async function sweepCcSpend(spoolPath: string = SPOOL_PATH): Promise<numb
   // Recover a file orphaned by a crash between rename and unlink
   if (fs.existsSync(ingestPath)) await ingestFile(ingestPath);
 
-  if (fs.existsSync(spoolPath)) {
-    fs.renameSync(spoolPath, ingestPath);
+  if (fs.existsSync(resolvedPath)) {
+    fs.renameSync(resolvedPath, ingestPath);
     await ingestFile(ingestPath);
   }
   return ingested;
