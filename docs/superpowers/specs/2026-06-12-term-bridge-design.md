@@ -98,12 +98,18 @@ per-invocation Telegram tap is the final control.
 
 ## 4. Accepted security trade (explicit, Tyler-approved)
 
-A container compromise can now reach the Mac. Bounding controls:
-forced-command (no arbitrary SSH), `from=` VM-IP only, key unreadable by the
-agent itself (file perms + `SENSITIVE_PATH_RE`), every call Telegram-gated even
-in automode, Mac-must-be-awake, Tailscale-only (no public path), instantly
-revocable (delete the `authorized_keys` line). Unbounded residue: an *approved*
-`send` into a shell pane. Tyler's tap is the final control and he accepts it.
+A container compromise can now reach the Mac. The **definitive** containment is
+the Mac-side forced-command: the key can only run `term.sh list|peek|send|keys`,
+never arbitrary SSH, and is pinned `from=` the VM IP. Secondary bounding:
+Tailscale-only (no public path), Mac-must-be-awake, instantly revocable (delete
+the `authorized_keys` line). For *normal* (cooperative-agent) operation,
+`peek`/`send`/`keys` are Telegram-gated and the key is tagged sensitive so the
+agent's own Read/Bash won't casually read it — but note that in the container the
+OS sandbox is off and `SENSITIVE_PATH_RE` is only a command-string pre-filter, so
+a *compromised* agent could read the key or call `ssh` directly; that is exactly
+why the forced-command (not the gate or the regex) is what actually bounds the
+blast radius. Unbounded residue: an *approved* `send` into a shell pane. Tyler's
+tap is the final control and he accepts it.
 
 ## 5. Failure handling
 
