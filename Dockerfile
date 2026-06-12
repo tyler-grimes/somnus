@@ -18,6 +18,11 @@ FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
+# Docker CLI only (no daemon) — lets the agent run deploy commands via the
+# host socket. GID 999 matches the docker group on most Debian/Ubuntu hosts;
+# if the host GID differs the entrypoint can fix it at runtime.
+COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
+RUN groupadd -g 999 docker && usermod -aG docker node
 # Claude Code CLI for cc.sh headless sessions (subscription-authed at runtime
 # via CLAUDE_CODE_OAUTH_TOKEN; no API key in session env). Pinned: cc.sh
 # parses the JSON output (session_id, total_cost_usd) — bump deliberately.

@@ -44,6 +44,7 @@ services:
     volumes:
       - agent_workspace:/app/workspace
       - claude_state:/home/node/.claude
+      - /var/run/docker.sock:/var/run/docker.sock
 
   dashboard:
     build:
