@@ -16,6 +16,7 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-opus-4-8": { input: 5, output: 25 },
   "claude-sonnet-4-6": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 1, output: 5 },
+  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
 };
 
 function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
@@ -29,8 +30,9 @@ export async function extractStructured<T extends z.ZodType>(opts: {
   user: string;
   schema: T;
   maxTokens?: number;
+  model?: string;
 }): Promise<z.infer<T>> {
-  const model = config.dreamModel;
+  const model = opts.model ?? config.dreamModel;
   const response = await client.messages.parse({
     model,
     max_tokens: opts.maxTokens ?? 8000,

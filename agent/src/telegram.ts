@@ -46,6 +46,7 @@ export function createBot(
   opts: {
     onDreamRequested?: () => Promise<void>;
     onBriefingRequested?: () => Promise<void>;
+    onGapAnalysisRequested?: () => Promise<void>;
   } = {},
 ): Bot {
   const bot = new Bot(config.telegramBotToken);
@@ -137,6 +138,18 @@ export function createBot(
   bot.command("brief", async (ctx) => {
     if (!opts.onBriefingRequested) return ctx.reply("Briefing not wired up.");
     await opts.onBriefingRequested();
+  });
+
+  // /gaps — manually trigger proactive gap analysis
+  bot.command("gaps", async (ctx) => {
+    if (!opts.onGapAnalysisRequested) {
+      await ctx.reply("Gap analysis not wired up in this process.");
+      return;
+    }
+    await ctx.reply(
+      "Starting gap analysis — I'll send findings if anything high-priority turns up.",
+    );
+    await opts.onGapAnalysisRequested();
   });
 
   // /dream — manually trigger the nightly consolidation cycle

@@ -5,7 +5,7 @@ import { config } from "./config.js";
 import { pool } from "./db.js";
 import { createBot } from "./telegram.js";
 import { initPolicy } from "./agent.js";
-import { startScheduler, triggerBriefingNow, triggerDreamNow } from "./scheduler.js";
+import { startScheduler, triggerBriefingNow, triggerDreamNow, triggerGapAnalysisNow } from "./scheduler.js";
 
 /**
  * Claude Code strips credential env vars (CLAUDE_CODE_OAUTH_TOKEN,
@@ -43,6 +43,7 @@ async function main(): Promise<void> {
   const bot = createBot({
     onDreamRequested: () => triggerDreamNow(boss),
     onBriefingRequested: () => triggerBriefingNow(boss),
+    onGapAnalysisRequested: () => triggerGapAnalysisNow(boss),
   });
 
   const shutdown = async (signal: string) => {
