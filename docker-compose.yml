@@ -44,7 +44,6 @@ services:
     volumes:
       - agent_workspace:/app/workspace
       - claude_state:/home/node/.claude
-      - /var/run/docker.sock:/var/run/docker.sock
 
   dashboard:
     build:
@@ -55,7 +54,9 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:3001:3001"
+      # Default localhost-only; set DASHBOARD_BIND to the Tailscale IP in the
+      # VM .env to reach it from other tailnet devices (still zero public).
+      - "${DASHBOARD_BIND:-127.0.0.1}:3001:3001"
     environment:
       DATABASE_URL: postgres://brain:${DB_PASSWORD}@db:5432/brain
       TZ: ${TZ:-America/Denver}
