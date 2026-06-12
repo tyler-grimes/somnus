@@ -20,6 +20,15 @@ SPOOL="${CC_SPEND_SPOOL:-/app/workspace/.cc-spend.jsonl}"
 ASKPASS="$(cd "$(dirname "$0")" && pwd)/git-askpass.sh"
 DEFAULT_MODEL="claude-sonnet-4-6"
 
+# Fine-grained PATs are per-resource-owner: GITHUB_TOKEN is the default
+# (Tyler's personal repos); GITHUB_TOKEN_<OWNER> overrides per owner
+# (e.g. GITHUB_TOKEN_NEUROTIME for the neurotime org).
+token_for_owner() { # <owner>
+  local key
+  key="GITHUB_TOKEN_$(printf '%s' "$1" | tr '[:lower:]-' '[:upper:]_')"
+  printf '%s' "${!key:-${GITHUB_TOKEN:?no token for owner $1 (set GITHUB_TOKEN or $key)}}"
+}
+
 run_claude() { # <dir> <prompt> [extra flags...]
   local dir=$1 prompt=$2
   shift 2
@@ -29,8 +38,11 @@ run_claude() { # <dir> <prompt> [extra flags...]
     *) model_args=(--model "$DEFAULT_MODEL") ;;
   esac
   cd "$dir"
+  local strip_args=(-u ANTHROPIC_API_KEY)
+  local v
+  for v in "${!GITHUB_TOKEN@}"; do strip_args+=(-u "$v"); done
   local out
-  out=$(env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN \
+  out=$(env "${strip_args[@]}" \
     claude -p "$prompt" --output-format json --permission-mode acceptEdits \
     "${model_args[@]}" "$@") || {
     local code=$?
@@ -57,9 +69,12 @@ cmd=${1:?usage: cc.sh clone|run|resume|list|push}
 case "$cmd" in
   clone)
     spec=${2:?owner/repo}
+    owner=${spec%%/*}
     name=${spec##*/}
+    _tok="$(token_for_owner "$owner")"
     mkdir -p "$REPOS_DIR"
-    GIT_ASKPASS="$ASKPASS" git clone "https://x-access-token@github.com/$spec.git" "$REPOS_DIR/$name"
+    GIT_ASKPASS="$ASKPASS" GITHUB_TOKEN="$_tok" \
+      git clone "https://x-access-token@github.com/$spec.git" "$REPOS_DIR/$name"
     echo "cloned to $REPOS_DIR/$name"
     ;;
   run)
@@ -91,7 +106,10 @@ case "$cmd" in
         ;;
     esac
     cd "$dir"
-    GIT_ASKPASS="$ASKPASS" git push origin "HEAD:$branch"
+    origin=$(git remote get-url origin)
+    owner=$(printf '%s' "$origin" | sed -E 's#https://[^/]*/([^/]+)/.*#\1#')
+    GIT_ASKPASS="$ASKPASS" GITHUB_TOKEN="$(token_for_owner "$owner")" \
+      git push origin "HEAD:$branch"
     ;;
   *)
     echo "unknown command: $cmd" >&2

@@ -192,6 +192,10 @@ Two credentials in the VM `.env` (never on the Mac, never in git):
    Metadata (Read-only); Expiration 90 days. Then enable branch protection on
    `main` for those repos (Settings → Branches → Add rule). Add to VM `.env`:
    `GITHUB_TOKEN=github_pat_...`
+   Repos under another owner (e.g. the `neurotime` org) need their own PAT —
+   same scopes, resource owner = the org — added as `GITHUB_TOKEN_<OWNER>`
+   (uppercase, `-`→`_`): `GITHUB_TOKEN_NEUROTIME=github_pat_...`. cc.sh picks
+   the token by repo owner; `GITHUB_TOKEN` is the fallback.
 
 2. **Claude subscription token** — on the Mac run `claude setup-token`,
    complete the browser flow, copy the token. Add to VM `.env`:

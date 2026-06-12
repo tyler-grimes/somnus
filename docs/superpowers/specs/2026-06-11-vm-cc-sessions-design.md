@@ -56,6 +56,9 @@ it for both username and password prompts; username is sent as
 Two new VM-only `.env` entries (never on the Mac, never in git):
 
 - `GITHUB_TOKEN` — fine-grained PAT as decided above. **Not** added to `SECRET_ENV_VARS` in `sandbox.ts` (cc.sh needs it via the subprocess env); the existing `env -i` wrapper (layer 2) already hides it from every sandboxed Bash command, and §2 keeps it away from headless sessions.
+  Amended 2026-06-11: org-owned repos (neurotime) get `GITHUB_TOKEN_<OWNER>`
+  vars; cc.sh selects by repo owner, falls back to `GITHUB_TOKEN`. Sessions
+  see none of the `GITHUB_TOKEN*` vars.
 - `CLAUDE_CODE_OAUTH_TOKEN` — minted once on Tyler's Mac with `claude setup-token` (browser OAuth, ~1-year expiry, revocable at claude.ai settings). Same env-layering treatment as the PAT.
 
 Accepted trade (documented, approved): both tokens are Tyler-account
