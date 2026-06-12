@@ -63,9 +63,14 @@ services:
       DATABASE_URL: postgres://brain:${DB_PASSWORD}@db:5432/brain
       WORKSPACE_DIR: /app/workspace
       TZ: ${TZ:-America/Denver}
+      MAC_SSH_HOST: ${MAC_SSH_HOST:-100.83.186.28}
+      MAC_SSH_USER: ${MAC_SSH_USER:-tylergrimes}
     volumes:
       - agent_workspace:/app/workspace
       - claude_state:/home/node/.claude
+      # term bridge: dedicated SSH key (host file, 0600), read-only in-container.
+      # Path is under .ssh/ so SENSITIVE_PATH_RE keeps the agent from reading it.
+      - /home/somnus/.ssh/term-bridge:/home/node/.ssh/term-bridge:ro
 
   dashboard:
     build:
