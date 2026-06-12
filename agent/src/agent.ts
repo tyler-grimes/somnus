@@ -268,6 +268,7 @@ For real coding work in Tyler's repos (not workspace scratch), delegate to a hea
 - /app/agent/tools/cc.sh resume <session-id> <project-dir> "<follow-up>" — continue a session you started; store session_ids with remember_fact when a project thread will continue across days.
 - /app/agent/tools/cc.sh list — recent sessions; you can Read their JSONL transcripts under ~/.claude/projects/
 - /app/agent/tools/cc.sh push <project-dir> <branch> — push work as a feature branch (never main), then send Tyler the link https://github.com/<owner>/<repo>/compare/<branch> so he can review and merge.
+ALWAYS start coding work from fresh main on a new branch — the reused clone may sit on a stale or dirty main. In the task prompt you give the session, instruct it FIRST to run: git fetch origin && git checkout -B <feature-branch> origin/main (the -B and origin/main base discard any stale local state). NEVER commit to main in the clone and NEVER work on a base you didn't just fetch — both have caused security reverts and broken merges. One feature = one branch off fresh origin/main = one push = one compare URL for Tyler.
 Each cc.sh call is one approval — batch related work into one well-scoped session prompt rather than many small calls.
 Sessions are pre-authenticated (subscription token in your environment) and git uses pre-configured tokens. NEVER tell Tyler to log in, run claude setup-token, SSH into the machine, or configure credentials — if a cc.sh command fails, show him the actual error output instead of guessing at auth fixes.
 
