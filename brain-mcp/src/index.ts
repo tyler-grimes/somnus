@@ -12,6 +12,7 @@
  *   supersede_fact  — close an old fact and link its replacement
  *   core_blocks     — render the always-in-context user-model blocks
  *   recent_episodes — recent conversation/event context
+ *   search_cc_sessions — search Claude Code session history by title/task/summary
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -293,6 +294,36 @@ server.tool(
     );
     return {
       content: [{ type: "text" as const, text: `Logged friction ${res.rows[0].id}` }],
+    };
+  },
+);
+
+server.tool(
+  "search_cc_sessions",
+  "Search Claude Code session history by title, task prompt, or result summary. Returns matching sessions as a JSON array.",
+  { query: z.string().min(1).describe("Text to search for across session title, task, and summary") },
+  async ({ query }) => {
+    const res = await pool.query(
+      `SELECT session_id, title, task_prompt, result_summary, jsonl_path, ingested_at
+         FROM cc_sessions
+        WHERE title ILIKE '%' || $1 || '%'
+           OR task_prompt ILIKE '%' || $1 || '%'
+           OR result_summary ILIKE '%' || $1 || '%'
+        ORDER BY ingested_at DESC
+        LIMIT 20`,
+      [query],
+    );
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: spotlight(
+            res.rows.length
+              ? JSON.stringify(res.rows, null, 2)
+              : "No matching CC sessions found.",
+          ),
+        },
+      ],
     };
   },
 );

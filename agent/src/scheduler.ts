@@ -7,10 +7,12 @@ import { config } from "./config.js";
 import { runDreamCycle } from "./dream.js";
 import { buildMorningBriefing } from "./briefing.js";
 import { sweepCcSpend } from "./ccspend.js";
+import { ingestNewSessions } from "./cc-ingest.js";
 
 const DREAM_QUEUE = "dream-cycle";
 const BRIEFING_QUEUE = "morning-briefing";
 const CC_SPEND_QUEUE = "cc-spend-sweep";
+const CC_INGEST_QUEUE = "cc-ingest-sweep";
 
 /** Proactive push to Tyler — raw Bot API call, no grammY instance needed. */
 export async function notifyTelegram(text: string): Promise<void> {
@@ -55,6 +57,14 @@ export async function startScheduler(): Promise<PgBoss> {
   await boss.work(CC_SPEND_QUEUE, async () => {
     const n = await sweepCcSpend();
     if (n > 0) console.log(`[cc-spend] ingested ${n} session record(s)`);
+  });
+
+  await boss.createQueue(CC_INGEST_QUEUE);
+  // Every 15 minutes: ingest new CC session JSONL transcripts from ~/.claude/projects
+  await boss.schedule(CC_INGEST_QUEUE, "*/15 * * * *", {}, { tz: config.timezone });
+  await boss.work(CC_INGEST_QUEUE, async () => {
+    const n = await ingestNewSessions();
+    if (n > 0) console.log(`[cc-ingest] ingested ${n} session transcript(s)`);
   });
 
   console.log(
