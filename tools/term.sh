@@ -22,7 +22,12 @@ case "$cmd" in
     ;;
   send)
     pane=${2:?pane target}
-    text=${3:?text to send}
+    shift 2
+    # Join all remaining args as the text. The bridge (term-bridge.sh) word-
+    # splits the SSH request, so multi-word text arrives as separate args;
+    # taking only $3 would drop everything past the first word.
+    [ "$#" -gt 0 ] || { echo "term.sh: send needs text" >&2; exit 1; }
+    text="$*"
     # -l = literal (no key-name interpretation), then Enter separately
     tmux send-keys -t "$pane" -l "$text"
     tmux send-keys -t "$pane" Enter
