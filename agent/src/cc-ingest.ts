@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, basename, extname } from "node:path";
-import { pool } from "./db.js";
 
 const CLAUDE_PROJECTS_DIR = join(process.env.HOME ?? "/root", ".claude", "projects");
 
@@ -96,6 +95,7 @@ export function parseSession(jsonlPath: string): ParsedSession {
 }
 
 export async function ingestNewSessions(): Promise<number> {
+  const { pool } = await import("./db.js");
   const res = await pool.query<{ session_id: string }>("SELECT session_id FROM cc_sessions");
   const knownIds = new Set(res.rows.map((r) => r.session_id));
 
