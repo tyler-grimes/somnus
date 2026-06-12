@@ -25,7 +25,10 @@ case "$sub" in
     ;;
 esac
 
-# Re-split the original request into args and run the real term.sh. word
-# splitting here is intentional: term.sh's own quoting handles the text arg.
+# Re-split the original request into args and run the real term.sh. Word
+# splitting is intentional (term.sh's own quoting handles the text arg); but
+# disable globbing first so a request like `peek *` can't expand to the home
+# directory's filenames before reaching term.sh.
+set -f
 # shellcheck disable=SC2086
 exec "$HERE/term.sh" $req
