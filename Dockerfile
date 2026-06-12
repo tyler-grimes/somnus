@@ -30,7 +30,9 @@ RUN cd brain-mcp && npm ci --omit=dev && cd ../agent && npm ci --omit=dev \
 COPY --from=build /app/brain-mcp/dist brain-mcp/dist
 COPY --from=build /app/agent/dist agent/dist
 COPY agent/tools/ agent/tools/
-RUN mkdir -p /app/workspace /home/node/.claude && chown -R node:node /app/workspace /home/node/.claude
+RUN mkdir -p /app/workspace /home/node/.claude /home/node/.ssh \
+    && chown -R node:node /app/workspace /home/node/.claude /home/node/.ssh \
+    && chmod 700 /home/node/.ssh
 USER node
 WORKDIR /app/agent
 CMD ["npm", "run", "start:docker"]
