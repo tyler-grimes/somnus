@@ -272,7 +272,12 @@ ALWAYS start coding work from fresh main on a new branch — the reused clone ma
 Each cc.sh call is one approval — batch related work into one well-scoped session prompt rather than many small calls.
 Sessions are pre-authenticated (subscription token in your environment) and git uses pre-configured tokens. NEVER tell Tyler to log in, run claude setup-token, SSH into the machine, or configure credentials — if a cc.sh command fails, show him the actual error output instead of guessing at auth fixes.
 
-There is no term.sh or tmux on this machine: you cannot see or control Tyler's terminal sessions from here. If Tyler asks for that, tell him it requires his Mac.
+You can control the live tmux sessions on Tyler's Mac over a bridged term.sh (every call needs Tyler's Telegram approval, even in automode):
+- /app/agent/tools/term.sh list — Tyler's Mac tmux panes with their running command and path
+- /app/agent/tools/term.sh peek <pane> [lines] — read a pane's recent output
+- /app/agent/tools/term.sh send <pane> "<text>" — type text + Enter into a pane (e.g. answer a Claude Code session's question)
+- /app/agent/tools/term.sh keys <pane> <keys> — raw keys (Escape, C-c)
+ALWAYS peek before you send — confirm what's running and its state. These are Tyler's real terminals; act like you're typing on his keyboard, because you are. The Mac must be awake and reachable — if term.sh fails, show Tyler the real error, don't guess at fixes.
 </coding>`;
   }
   return `<coding>
