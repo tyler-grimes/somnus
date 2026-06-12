@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Somnus</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d1117;
+      --surface: #161b22;
+      --border:  #30363d;
+      --text:    #c9d1d9;
+      --muted:   #8b949e;
+      --green:   #3fb950;
+      --red:     #f85149;
+      --yellow:  #d29922;
+      --blue:    #58a6ff;
+      --purple:  #bc8cff;
+      --orange:  #ffa657;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #app {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+    }
+
+    /* ── header ── */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--text);
+    }
+    #status-line {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    #refresh-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── panels ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      background: #0d111799;
+    }
+    .panel-body {
+      padding: 10px 12px;
+      overflow-y: auto;
+      max-height: 420px;
+    }
+
+    /* ── 2-col grid ── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    /* ── scheduler ── */
+    .sched-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+    }
+    .sched-card {
+      background: var(--surface);
+      padding: 10px 14px;
+    }
+    .sched-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .sched-cron {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .sched-state-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green  { background: var(--green); box-shadow: 0 0 4px var(--green); }
+    .dot-red    { background: var(--red); }
+    .dot-blue   { background: var(--blue); animation: pulse 1.2s infinite; }
+    .dot-yellow { background: var(--yellow); }
+    .dot-gray   { background: var(--border); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+    .sched-ago {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* ── episodes ── */
+    .episode {
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .episode:last-child { border-bottom: none; }
+    .ep-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .role-user      { background: #1f6feb33; color: var(--blue);   border: 1px solid #1f6feb66; }
+    .role-assistant { background: #23863633; color: var(--green);  border: 1px solid #23863666; }
+    .role-system    { background: #6e409233; color: var(--purple); border: 1px solid #6e409266; }
+    .role-tool      { background: #9a5c2333; color: var(--orange); border: 1px solid #9a5c2366; }
+    .source-badge   { background: var(--border); color: var(--muted); border: 1px solid transparent; }
+    .ep-time {
+      font-size: 10px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+    .ep-content {
+      font-size: 11px;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      opacity: 0.9;
+    }
+    .ep-tool {
+      font-size: 10px;
+      color: var(--orange);
+      font-style: italic;
+    }
+
+    /* ── memory ── */
+    .mem-stats {
+      display: flex;
+      gap: 28px;
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-val   { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-top: 1px; }
+    .fact {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .fact:last-child { border-bottom: none; }
+    .fact-meta {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+    .kind-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--border);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .fact-time { font-size: 10px; color: var(--muted); margin-left: auto; }
+    .fact-claim { font-size: 11px; color: var(--text); word-break: break-word; }
+
+    /* ── spend ── */
+    .spend-hero {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .spend-amount { font-size: 26px; font-weight: 700; color: var(--text); }
+    .spend-sub    { font-size: 10px; color: var(--muted); }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 32px 1fr 58px;
+      gap: 8px;
+      align-items: center;
+      padding: 3px 0;
+    }
+    .bar-day    { font-size: 10px; color: var(--muted); text-align: right; }
+    .bar-track  { height: 9px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .bar-fill   { height: 100%; background: var(--blue); border-radius: 2px; min-width: 1px; }
+    .bar-fill.today { background: var(--green); }
+    .bar-cost   { font-size: 10px; color: var(--muted); text-align: right; }
+
+    /* ── cc sessions ── */
+    .ccs-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .ccs-item:last-child { border-bottom: none; }
+    .ccs-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+    .ccs-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .ccs-path {
+      font-size: 9px;
+      color: var(--muted);
+      opacity: 0.7;
+      word-break: break-all;
+    }
+    .ccs-prompt {
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-word;
+      margin-top: 2px;
+    }
+
+    /* ── utility ── */
+    .error   { color: var(--red);   font-size: 11px; padding: 4px 0; }
+    .empty   { color: var(--muted); font-size: 11px; padding: 4px 0; font-style: italic; }
+    .loading { color: var(--muted); font-size: 11px; padding: 4px 0; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1>SOMNUS</h1>
+    <div id="status-line">
+      <span id="updated-at">—</span>
+      <span id="countdown"></span>
+      <button id="refresh-btn" onclick="refresh()">refresh</button>
+    </div>
+  </header>
+
+  <!-- Scheduler -->
+  <div class="panel">
+    <div class="panel-header">
+      <span>Scheduler</span>
+      <span id="sched-badge" style="font-size:10px;color:var(--muted)">pg-boss</span>
+    </div>
+    <div class="sched-grid" id="sched-grid">
+      <div class="sched-card"><span class="loading">loading…</span></div>
+    </div>
+  </div>
+
+  <!-- Feed + Memory -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Live Feed</span>
+        <span id="feed-badge" style="font-size:10px;color:var(--muted)">episodes</span>
+      </div>
+      <div class="panel-body" id="feed-body"><p class="loading">loading…</p></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span>Memory</span>
+        <span id="mem-badge" style="font-size:10px;color:var(--muted)">facts</span>
+      </div>
+      <div class="panel-body" id="mem-body"><p class="loading">loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Spend + CC Sessions -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Spend</span>
+        <span id="spend-badge" style="font-size:10px;color:var(--muted)">spend_log</span>
+      </div>
+      <div class="panel-body" id="spend-body"><p class="loading">loading…</p></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span>CC Sessions</span>
+        <span id="ccs-badge" style="font-size:10px;color:var(--muted)">cc_sessions</span>
+      </div>
+      <div class="panel-body" id="ccs-body"><p class="loading">loading…</p></div>
+    </div>
+  </div>
+
+</div>
+<script>
+// ── utils ────────────────────────────────────────────────────────────
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const s = Math.round((Date.now() - new Date(ts)) / 1000);
+  if (s < 0)    return 'just now';
+  if (s < 60)   return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+const CRON_LABELS = {
+  '0 4 * * *':    '04:00 nightly',
+  '0 8 * * *':    '08:00 daily',
+  '*/10 * * * *': 'every 10 min',
+  '*/15 * * * *': 'every 15 min',
+};
+
+function cronLabel(cron) {
+  return cron ? (CRON_LABELS[cron] || cron) : '—';
+}
+
+function stateDot(state) {
+  const cls = { completed: 'green', failed: 'red', active: 'blue', created: 'yellow', retry: 'yellow' }[state] || 'gray';
+  return `<span class="dot dot-${cls}"></span>`;
+}
+
+function stateLabel(state) {
+  if (!state) return 'no data';
+  return state;
+}
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}
+
+// ── panels ───────────────────────────────────────────────────────────
+
+async function loadScheduler() {
+  const grid = document.getElementById('sched-grid');
+  const data = await api('/api/scheduler');
+  grid.innerHTML = data.map(job => {
+    const lastTs = job.completedon || job.startedon || job.createdon;
+    return `<div class="sched-card">
+      <div class="sched-name">${esc(job.name)}</div>
+      <div class="sched-cron">${esc(cronLabel(job.cron))}${job.timezone ? ' · ' + esc(job.timezone) : ''}</div>
+      <div class="sched-state-row">
+        ${stateDot(job.state)}
+        <span style="color:var(--${{'completed':'green','failed':'red','active':'blue','created':'yellow','retry':'yellow'}[job.state]||'muted'})">${esc(stateLabel(job.state))}</span>
+      </div>
+      <div class="sched-ago">${timeAgo(lastTs)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadFeed() {
+  const body = document.getElementById('feed-body');
+  const badge = document.getElementById('feed-badge');
+  const data = await api('/api/episodes');
+  badge.textContent = data.length + ' rows';
+  if (!data.length) { body.innerHTML = '<p class="empty">no episodes yet</p>'; return; }
+  body.innerHTML = data.map(ep => `
+    <div class="episode">
+      <div class="ep-meta">
+        <span class="badge role-${esc(ep.role)}">${esc(ep.role)}</span>
+        <span class="badge source-badge">${esc(ep.source)}</span>
+        ${ep.tool_name ? `<span class="ep-tool">${esc(ep.tool_name)}</span>` : ''}
+        ${ep.cost_usd ? `<span style="font-size:10px;color:var(--muted)">$${parseFloat(ep.cost_usd).toFixed(5)}</span>` : ''}
+        <span class="ep-time">${timeAgo(ep.created_at)}</span>
+      </div>
+      <div class="ep-content">${esc(ep.content)}</div>
+    </div>
+  `).join('');
+}
+
+async function loadMemory() {
+  const body = document.getElementById('mem-body');
+  const badge = document.getElementById('mem-badge');
+  const data = await api('/api/memory');
+  badge.textContent = data.total + ' facts';
+  const factsHtml = (data.recent || []).map(f => `
+    <div class="fact">
+      <div class="fact-meta">
+        <span class="kind-badge">${esc(f.kind)}</span>
+        <span style="font-size:10px;color:var(--muted)">${esc(f.source || '')}</span>
+        <span class="fact-time">${timeAgo(f.created_at)}</span>
+      </div>
+      <div class="fact-claim">${esc(f.claim)}</div>
+    </div>
+  `).join('');
+  body.innerHTML = `
+    <div class="mem-stats">
+      <div><div class="stat-val">${data.total}</div><div class="stat-label">total</div></div>
+      <div><div class="stat-val" style="color:var(--green)">+${data.added_24h}</div><div class="stat-label">last 24 h</div></div>
+    </div>
+    ${factsHtml || '<p class="empty">no facts yet</p>'}
+  `;
+}
+
+async function loadSpend() {
+  const body = document.getElementById('spend-body');
+  const badge = document.getElementById('spend-badge');
+  const data = await api('/api/spend');
+  badge.textContent = '$' + data.today.toFixed(4) + ' today';
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const maxCost = Math.max(...(data.week || []).map(r => r.cost), 0.0001);
+  const barsHtml = (data.week || []).map(r => {
+    const pct = (r.cost / maxCost * 100).toFixed(1);
+    const isToday = r.day === todayStr;
+    // r.day is a date string like "2026-06-11"; parse at noon UTC to avoid off-by-one from TZ
+    const label = new Date(r.day + 'T12:00:00Z').toLocaleDateString('en', { weekday: 'short' });
+    return `<div class="bar-row">
+      <span class="bar-day">${isToday ? '<b style="color:var(--green)">' + label + '</b>' : label}</span>
+      <div class="bar-track"><div class="bar-fill${isToday ? ' today' : ''}" style="width:${pct}%"></div></div>
+      <span class="bar-cost">$${r.cost.toFixed(4)}</span>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="spend-hero">
+      <span class="spend-amount">$${data.today.toFixed(4)}</span>
+      <span class="spend-sub">today</span>
+    </div>
+    ${barsHtml || '<p class="empty">no spend data</p>'}
+  `;
+}
+
+async function loadCCSessions() {
+  const body = document.getElementById('ccs-body');
+  const badge = document.getElementById('ccs-badge');
+  const data = await api('/api/cc-sessions');
+  badge.textContent = data.length + ' sessions';
+  if (!data.length) { body.innerHTML = '<p class="empty">no CC sessions yet</p>'; return; }
+  body.innerHTML = data.map(s => {
+    const filename = (s.jsonl_path || '').split('/').pop() || '';
+    return `<div class="ccs-item">
+      <div class="ccs-title">${esc(s.title || s.session_id)}</div>
+      <div class="ccs-meta">
+        <span>${timeAgo(s.ingested_at)}</span>
+        ${filename ? `<span class="ccs-path">${esc(filename)}</span>` : ''}
+      </div>
+      ${s.task_prompt ? `<div class="ccs-prompt">${esc(s.task_prompt)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── refresh loop ─────────────────────────────────────────────────────
+
+let nextRefreshAt = 0;
+let refreshing = false;
+
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  document.getElementById('updated-at').textContent = 'refreshing…';
+  document.getElementById('countdown').textContent = '';
+
+  await Promise.allSettled([
+    loadScheduler().catch(err => {
+      document.getElementById('sched-grid').innerHTML =
+        `<div class="sched-card"><span class="error">${esc(String(err))}</span></div>`;
+    }),
+    loadFeed().catch(err => {
+      document.getElementById('feed-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
+    }),
+    loadMemory().catch(err => {
+      document.getElementById('mem-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
+    }),
+    loadSpend().catch(err => {
+      document.getElementById('spend-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
+    }),
+    loadCCSessions().catch(err => {
+      document.getElementById('ccs-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
+    }),
+  ]);
+
+  const now = new Date();
+  document.getElementById('updated-at').textContent =
+    'updated ' + now.toLocaleTimeString();
+  nextRefreshAt = now.getTime() + 30_000;
+  refreshing = false;
+}
+
+function tick() {
+  const rem = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+  if (rem > 0) {
+    document.getElementById('countdown').textContent = 'next in ' + rem + 's';
+  } else if (!refreshing && nextRefreshAt > 0) {
+    refresh();
+  }
+}
+
+setInterval(tick, 1000);
+refresh();
+</script>
+</body>
+</html>
