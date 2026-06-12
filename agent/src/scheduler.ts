@@ -43,6 +43,12 @@ export async function startScheduler(): Promise<PgBoss> {
     const report = await runDreamCycle();
     console.log(report);
     await notifyTelegram(report);
+    // Chain gap analysis onto dream completion: it researches against the
+    // facts/embeddings the dream cycle just consolidated, and won't re-flag
+    // problems the dream cycle resolved. Runs whenever dream actually
+    // finishes, no clock race.
+    await boss.send(GAP_ANALYSIS_QUEUE, {}, { singletonKey: "gap-analysis" });
+    console.log("[dream] enqueued gap analysis");
   });
 
   await boss.createQueue(BRIEFING_QUEUE);
@@ -70,8 +76,9 @@ export async function startScheduler(): Promise<PgBoss> {
   });
 
   await boss.createQueue(GAP_ANALYSIS_QUEUE);
-  // Nightly at 03:00 — runs before the 04:00 dream cycle so the dream can absorb gap findings
-  await boss.schedule(GAP_ANALYSIS_QUEUE, "0 3 * * *", {}, { tz: config.timezone, singletonKey: "gap-analysis" });
+  // No standalone schedule: chained off dream completion (see DREAM_QUEUE
+  // handler) so it researches freshly consolidated memory. Manual /gaps
+  // still enqueues directly via triggerGapAnalysisNow.
   await boss.work(GAP_ANALYSIS_QUEUE, async () => {
     console.log("[gap-analysis] starting");
     try {
@@ -85,7 +92,7 @@ export async function startScheduler(): Promise<PgBoss> {
   });
 
   console.log(
-    `[boot] scheduler up — dream cycle 04:00, gap analysis 03:00, briefing 08:00 ${config.timezone}`,
+    `[boot] scheduler up — dream cycle 04:00 (→ gap analysis), briefing 08:00 ${config.timezone}`,
   );
   return boss;
 }
