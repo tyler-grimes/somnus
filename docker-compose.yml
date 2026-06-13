@@ -89,6 +89,7 @@ services:
     environment:
       DATABASE_URL: postgres://brain:${DB_PASSWORD}@db:5432/brain
       TZ: ${TZ:-America/Denver}
+      CHAT_TOKEN: ${CHAT_TOKEN:-}
 
   # Later (see research/README.md build order):
   #   wal-archive: WAL-G continuous archiving to object storage
