@@ -10,6 +10,7 @@
     "start": "node --env-file=../.env dist/index.js",
     "start:docker": "node dist/index.js",
     "cli": "node --env-file=../.env dist/cli.js",
+    "backfill-edges": "node dist/backfill-edges.js",
     "test": "node --env-file-if-exists=../.env --import tsx --test src/*.test.ts"
   },
   "dependencies": {
