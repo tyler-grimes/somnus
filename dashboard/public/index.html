@@ -337,6 +337,19 @@ body::after{
 .win .body::-webkit-scrollbar{ width:5px; }
 .win .body::-webkit-scrollbar-thumb{ background:var(--gray); border-radius:0; }
 
+.graph-canvas{ display:block; cursor:grab; touch-action:none; }
+.graph-legend{ position:absolute; bottom:4px; left:6px; display:flex; flex-wrap:wrap; gap:6px; font-size:9px; color:var(--gray); pointer-events:none; z-index:3; }
+.graph-legend span{ display:flex; align-items:center; gap:3px; }
+.graph-legend i{ width:8px; height:8px; display:inline-block; }
+.graph-legend .graph-refresh{ pointer-events:auto; cursor:pointer; color:#ebdbb2; font-size:12px; }
+.graph-pop{ position:absolute; width:180px; max-height:72%; overflow:auto; background:#282828; border:2px solid var(--accent); padding:6px 8px; font-size:11px; z-index:5; box-shadow:3px 3px 0 #1d2021; }
+.graph-pop .gp-x{ position:absolute; top:2px; right:6px; cursor:pointer; color:var(--gray); }
+.graph-pop .gp-ttl{ color:#ebdbb2; font-weight:bold; padding-right:14px; word-break:break-word; }
+.graph-pop .gp-type{ color:var(--gray); font-size:9px; margin:2px 0 4px; }
+.graph-pop .gp-truth{ color:#d5c4a1; margin-bottom:4px; }
+.graph-pop .gp-link{ cursor:pointer; color:#83a598; padding:1px 0; }
+.graph-pop .gp-link:hover{ color:#8ec07c; }
+
 .win .grip{
   position:absolute; right:0; bottom:0; width:14px; height:14px;
   cursor:nwse-resize; touch-action:none;
@@ -449,6 +462,7 @@ const WINDOWS = [
   { id:'sessions',  title:'sessions',  sub:'cc.sh',     accent:'#b8bb26', api:'/api/cc-sessions', render:renderSessions },
   { id:'spend',     title:'spend',     sub:'usd',       accent:'#fabd2f', api:'/api/spend',       render:renderSpend },
   { id:'scheduler', title:'scheduler', sub:'dream · gaps · brief', accent:'#fe8019', api:'/api/scheduler', render:renderScheduler },
+  { id:'graph',     title:'graph',     sub:'pages · edges', accent:'#8ec07c', custom:true },
 ];
 const els = {};
 let zTop = 10;
@@ -458,7 +472,7 @@ function defaultLayout(){
   const W = innerWidth, H = innerHeight, cx = W/2, cy = H/2;
   const ww = Math.max(240, Math.min(340, W*0.28)), wh = Math.max(180, Math.min(260, H*0.32));
   const R = Math.min(W,H)*0.40 + 80;
-  const order = ['scheduler','memory','episodes','sessions','spend'];
+  const order = ['scheduler','graph','memory','episodes','sessions','spend'];
   const layout = {};
   order.forEach((id,i)=>{
     const a = (-Math.PI/2) + i*(2*Math.PI/order.length);
@@ -605,9 +619,195 @@ function renderScheduler(d){
   }).join('');
 }
 
+// =================== graph view ===================
+const TYPE_COLOR = { person:'#fb4934', concept:'#8ec07c', meeting:'#fabd2f', note:'#83a598', daily:'#d3869b', email:'#fe8019' };
+const TYPE_FALLBACK = '#a89984';
+
+async function initGraph(e){
+  if (e._graphCleanup) e._graphCleanup();
+  e.body.style.padding = '0'; e.body.style.overflow = 'hidden'; e.body.style.position = 'relative';
+  e.body.innerHTML = '';
+
+  let nodes = [], links = [], byId = new Map();
+  let raf = 0, alpha = 1, observer = null, popover = null;
+  const cam = { x:0, y:0, scale:1 };
+  let dragNode = null, panning = false, hoverNode = null, selectedId = null;
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'graph-canvas';
+  const ctx = canvas.getContext('2d');
+
+  const bw = () => e.body.clientWidth || 400;
+  const bh = () => e.body.clientHeight || 300;
+  function fit(){
+    const w = bw(), h = bh(), dpr = window.devicePixelRatio || 1;
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  const s2w = (sx,sy) => ({ x:(sx-cam.x)/cam.scale, y:(sy-cam.y)/cam.scale });
+  const radius = n => 3 + Math.min(9, n.degree);
+
+  function neighborSet(node){
+    const s = new Set([node]);
+    for (const l of links){ if(l.source===node.id) s.add(byId.get(l.target)); if(l.target===node.id) s.add(byId.get(l.source)); }
+    s.delete(undefined); return s;
+  }
+
+  function step(){
+    const cx = bw()/2, cy = bh()/2;
+    for (let i=0;i<nodes.length;i++){
+      const a = nodes[i];
+      for (let j=i+1;j<nodes.length;j++){
+        const b = nodes[j];
+        let dx = a.x-b.x, dy = a.y-b.y; const d2 = dx*dx+dy*dy || 0.01; const d = Math.sqrt(d2);
+        const f = 600/d2; const fx=(dx/d)*f, fy=(dy/d)*f;
+        a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+      }
+    }
+    for (const l of links){
+      const a = byId.get(l.source), b = byId.get(l.target); if(!a||!b) continue;
+      let dx = b.x-a.x, dy = b.y-a.y; const d = Math.sqrt(dx*dx+dy*dy) || 0.01;
+      const f = (d-60)*0.02; const fx=(dx/d)*f, fy=(dy/d)*f;
+      a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+    }
+    for (const n of nodes){
+      n.vx += (cx-n.x)*0.0015; n.vy += (cy-n.y)*0.0015;
+      if (n===dragNode){ n.vx=0; n.vy=0; continue; }
+      n.vx *= 0.85; n.vy *= 0.85;
+      n.x += n.vx*alpha; n.y += n.vy*alpha;
+    }
+    alpha *= 0.992; if (alpha < 0.02) alpha = 0.02;
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,bw(),bh());
+    ctx.save(); ctx.translate(cam.x,cam.y); ctx.scale(cam.scale,cam.scale);
+    const hl = hoverNode ? neighborSet(hoverNode) : null;
+    ctx.lineWidth = 1/cam.scale;
+    for (const l of links){
+      const a = byId.get(l.source), b = byId.get(l.target); if(!a||!b) continue;
+      const on = hl && (a===hoverNode || b===hoverNode);
+      ctx.strokeStyle = on ? 'rgba(235,219,178,0.6)' : 'rgba(168,153,132,0.18)';
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+    for (const n of nodes){
+      const r = radius(n), dim = hl && !hl.has(n);
+      ctx.globalAlpha = dim ? 0.25 : 1;
+      ctx.fillStyle = TYPE_COLOR[n.type] || TYPE_FALLBACK;
+      ctx.fillRect(n.x-r, n.y-r, r*2, r*2);
+      if (n.id===selectedId){ ctx.strokeStyle='#ebdbb2'; ctx.lineWidth=2/cam.scale; ctx.strokeRect(n.x-r-2,n.y-r-2,r*2+4,r*2+4); }
+    }
+    ctx.globalAlpha = 1;
+    if (hl){
+      ctx.fillStyle='#ebdbb2'; ctx.font=`${Math.max(9,11/cam.scale)}px monospace`;
+      for (const n of hl){ if(n) ctx.fillText(n.title||n.slug, n.x+radius(n)+2, n.y+3); }
+    }
+    ctx.restore();
+  }
+
+  function loop(){
+    if (!document.hidden){ if (alpha > 0.025) step(); draw(); }
+    raf = requestAnimationFrame(loop);
+  }
+
+  function nodeAt(sx,sy){
+    const w = s2w(sx,sy); let best=null, bestD=Infinity;
+    for (const n of nodes){ const r=radius(n)+3; const dx=n.x-w.x, dy=n.y-w.y; const d=dx*dx+dy*dy; if(d<r*r && d<bestD){ best=n; bestD=d; } }
+    return best;
+  }
+
+  canvas.addEventListener('pointermove', ev=>{
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX-rect.left, sy = ev.clientY-rect.top;
+    if (dragNode){ const w = s2w(sx,sy); dragNode.x=w.x; dragNode.y=w.y; alpha=Math.max(alpha,0.3); return; }
+    if (panning){ cam.x += ev.movementX; cam.y += ev.movementY; return; }
+    const hit = nodeAt(sx,sy);
+    if (hit!==hoverNode){ hoverNode=hit; canvas.style.cursor = hit?'pointer':'grab'; }
+  });
+  canvas.addEventListener('pointerdown', ev=>{
+    canvas.setPointerCapture(ev.pointerId);
+    const rect = canvas.getBoundingClientRect();
+    const hit = nodeAt(ev.clientX-rect.left, ev.clientY-rect.top);
+    if (hit){ dragNode = hit; } else { panning = true; canvas.style.cursor='grabbing'; }
+  });
+  canvas.addEventListener('pointerup', ev=>{
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX-rect.left, sy = ev.clientY-rect.top;
+    if (dragNode && nodeAt(sx,sy)===dragNode) openPopover(dragNode, sx, sy);
+    dragNode = null; panning = false; canvas.style.cursor='grab';
+  });
+  canvas.addEventListener('wheel', ev=>{
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX-rect.left, sy = ev.clientY-rect.top;
+    const before = s2w(sx,sy);
+    cam.scale = Math.max(0.2, Math.min(4, cam.scale*(ev.deltaY<0 ? 1.1 : 1/1.1)));
+    cam.x = sx - before.x*cam.scale; cam.y = sy - before.y*cam.scale;
+  }, { passive:false });
+
+  function closePopover(){ if(popover){ popover.remove(); popover=null; } }
+  async function openPopover(node, sx, sy){
+    selectedId = node.id; closePopover();
+    popover = document.createElement('div'); popover.className = 'graph-pop';
+    popover.style.left = Math.max(2, Math.min(sx, bw()-184)) + 'px';
+    popover.style.top  = Math.max(2, Math.min(sy, bh()-90)) + 'px';
+    popover.innerHTML = '<div class="empty">loading…</div>';
+    e.body.appendChild(popover);
+    try {
+      const r = await fetch('/api/page/'+node.id, {cache:'no-store'});
+      const d = await r.json();
+      if (d.error){ popover.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+      const linkRows = (d.links||[]).map(l=>`<div class="gp-link" data-id="${esc(l.id)}">${l.outgoing?'→':'←'} <b>${esc(l.linkType)}</b> ${esc(l.title)}</div>`).join('');
+      popover.innerHTML = `
+        <div class="gp-x">\xd7</div>
+        <div class="gp-ttl">${esc(d.title)}</div>
+        <div class="gp-type">${esc(d.type)} \xb7 ${d.factCount} facts</div>
+        ${d.compiledTruth ? `<div class="gp-truth">${esc(d.compiledTruth)}</div>` : ''}
+        ${linkRows ? `<div class="gp-links">${linkRows}</div>` : ''}`;
+      popover.querySelector('.gp-x').onclick = closePopover;
+      popover.querySelectorAll('.gp-link').forEach(el => el.onclick = ()=>{
+        const t = byId.get(el.dataset.id);
+        if (t){ cam.x = bw()/2 - t.x*cam.scale; cam.y = bh()/2 - t.y*cam.scale; openPopover(t, bw()/2, bh()/2); }
+      });
+    } catch(err){ popover.innerHTML = `<div class="err">offline</div>`; }
+  }
+
+  e.body.appendChild(canvas);
+  const legend = document.createElement('div');
+  legend.className = 'graph-legend';
+  legend.innerHTML = Object.entries(TYPE_COLOR).map(([t,c])=>`<span><i style="background:${c}"></i>${t}</span>`).join('') + '<span class="graph-refresh" title="refresh">↻</span>';
+  e.body.appendChild(legend);
+  legend.querySelector('.graph-refresh').onclick = load;
+
+  observer = new ResizeObserver(fit); observer.observe(e.body); fit();
+
+  async function load(){
+    closePopover();
+    try {
+      const r = await fetch('/api/graph', {cache:'no-store'});
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      const w = bw(), h = bh(), N = d.nodes.length || 1;
+      nodes = d.nodes.map((n,i)=>{ const a=(i/N)*Math.PI*2; return {...n, x:w/2+Math.cos(a)*120+(i%7), y:h/2+Math.sin(a)*120+(i%5), vx:0, vy:0}; });
+      links = d.links; byId = new Map(nodes.map(n=>[n.id,n])); alpha = 1; selectedId = null; hoverNode = null;
+      const old = e.body.querySelector('.empty'); if(old) old.remove();
+      if (!nodes.length){ const em=document.createElement('div'); em.className='empty'; em.textContent='no pages yet'; e.body.appendChild(em); }
+    } catch(err){
+      const m = document.createElement('div'); m.className='err'; m.textContent = 'graph offline — '+(err.message||err);
+      e.body.appendChild(m);
+    }
+  }
+  await load();
+  loop();
+
+  e._graphCleanup = ()=>{ cancelAnimationFrame(raf); if(observer) observer.disconnect(); closePopover(); };
+}
+
 // =================== polling ===================
 async function poll(def){
   const e = els[def.id]; if(!e) return;
+  if(def.custom) return;            // custom windows (graph) manage their own body
   try { const r = await fetch(def.api, {cache:'no-store'}); const d = await r.json();
     e.body.innerHTML = def.render(d);
   } catch(err){ e.body.innerHTML = `<div class="err">offline — ${esc(err.message||err)}</div>`; }
@@ -723,6 +923,7 @@ bmo.addEventListener('pointerdown', ev=>{
 function boot(){
   const layout = loadLayout(), dflt = defaultLayout();
   WINDOWS.forEach(def => makeWindow(def, layout[def.id] || dflt[def.id]));
+  if (els.graph) initGraph(els.graph);
   bmoRestore();
   pollAll(); setInterval(pollAll, 8000);
 }
