@@ -282,11 +282,12 @@ body::after{
   border-radius:0 0 6px 6px;
 }
 
-/* BMO label */
-#bmo .bmo-label{
-  margin-top:3px;
-  font-size:9px; letter-spacing:0.3em;
-  color:var(--gray); text-transform:uppercase;
+/* SOMNUS wordmark engraved on the body, between the controls */
+#bmo .bmo-name{
+  flex:1; text-align:center;
+  font-size:11px; font-weight:bold; letter-spacing:0.28em;
+  color:var(--bg-h); text-transform:uppercase;
+  text-shadow:0 1px 0 rgba(255,255,255,0.15);
 }
 
 /* ===================== WINDOWS ===================== */
@@ -421,6 +422,7 @@ body::after{
     </div>
     <div class="bmo-controls">
       <div class="dpad"></div>
+      <div class="bmo-name">SOMNUS</div>
       <div class="bmo-buttons">
         <span class="btn green"></span><span class="btn red"></span>
         <span class="btn blue"></span><span class="btn yellow"></span>
@@ -431,7 +433,6 @@ body::after{
     <div class="leg"></div>
     <div class="leg"></div>
   </div>
-  <div class="bmo-label">SOMNUS</div>
 </div>
 
 <div id="hint">drag titlebars · corner to resize · dblclick to focus · click void to release</div>
