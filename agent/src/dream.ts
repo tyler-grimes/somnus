@@ -21,6 +21,7 @@ import { config } from "./config.js";
 import { logEpisode, pool, spentTodayUsd } from "./db.js";
 import { extractStructured } from "./llm.js";
 import { SKILLS_PENDING_DIR } from "./skills.js";
+import { linkPageRows, type CandidatePage } from "./edges.js";
 
 const EPISODE_WINDOW = "36 hours"; // > daily cadence; dedupe makes re-runs safe
 
@@ -192,7 +193,23 @@ async function reflect(): Promise<string> {
   return `reflect: daily-${today} written (${out.open_threads.length} open threads)`;
 }
 
-// ---------- Phase 3.5: evolve persona ----------
+// ---------- Phase 3.5: derive edges between pages ----------
+async function linkPages(): Promise<string> {
+  const pages = await pool.query<CandidatePage>(
+    `SELECT id, slug, type, effective_date,
+            title, left(coalesce(compiled_truth, title), 300) AS summary
+       FROM pages
+      WHERE deleted_at IS NULL
+      ORDER BY (updated_at > now() - interval '36 hours') DESC,
+               emotional_weight DESC, updated_at DESC
+      LIMIT 40`,
+  );
+  if (pages.rowCount === 0) return "edges: no pages to link";
+  const r = await linkPageRows(pool, pages.rows);
+  return `edges: +${r.inserted} linked (${r.structural} structural, ${r.semantic} semantic candidates)`;
+}
+
+// ---------- Phase 3.6: evolve persona ----------
 // Somnus's own personality is data, not prompt text. Nightly, it reviews how
 // the day's conversations went and earns small persona refinements: style
 // that landed, opinions it formed, shared vocabulary with the owner. Bounded and
@@ -267,6 +284,7 @@ async function evolvePersona(): Promise<string> {
 }
 
 // ---------- Phase 4: cluster friction ----------
+// (This is Phase 4; the persona phase is 3.6 and edges phase is 3.5)
 async function clusterFriction(): Promise<string> {
   const links = await pool.query(
     `SELECT a.id AS a_id, a.cluster_id AS a_cluster, b.id AS b_id, b.cluster_id AS b_cluster
@@ -412,6 +430,7 @@ export async function runDreamCycle(): Promise<string> {
     ["extract", extractFacts],
     ["contradict", resolveContradictions],
     ["reflect", reflect],
+    ["link", linkPages],
     ["persona", evolvePersona],
     ["cluster", clusterFriction],
     ["skills", draftSkills],
