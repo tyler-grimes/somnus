@@ -16,7 +16,7 @@ import { startScheduler, triggerBriefingNow, triggerDreamNow, triggerGapAnalysis
  * same-UID processes could already read /proc/<agent>/environ.
  */
 function writeCcCredentials(): void {
-  if (!config.bashAutoApprove) return; // container-only; Mac dev uses real host tools
+  if (!config.bashAutoApprove) return; // container-only; local dev uses real host tools
   const lines: string[] = [];
   for (const [k, v] of Object.entries(process.env)) {
     if (v && (k === "CLAUDE_CODE_OAUTH_TOKEN" || k.startsWith("GITHUB_TOKEN"))) {

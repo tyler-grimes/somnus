@@ -9,7 +9,7 @@
 # stops the key from being a general shell, not from using term.sh.)
 set -euo pipefail
 
-# Forced commands inherit a minimal PATH; tmux lives in Homebrew.
+# Forced commands inherit a minimal PATH; common tool dirs (incl. Homebrew on macOS).
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

@@ -196,7 +196,7 @@ export function createBot(
         [
           `inbox-${stamp}-${path.basename(original).toLowerCase().replace(/[^a-z0-9.-]+/g, "-")}`,
           title,
-          `Tyler sent a ${kindLabel} via Telegram on ${new Date().toISOString()}.\nSaved at: ${saved}${caption ? `\nCaption: ${caption}` : ""}`,
+          `${config.ownerName} sent a ${kindLabel} via Telegram on ${new Date().toISOString()}.\nSaved at: ${saved}${caption ? `\nCaption: ${caption}` : ""}`,
           JSON.stringify({ source: "telegram_upload", file: saved, kind: kindLabel }),
         ],
       );

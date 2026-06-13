@@ -16,7 +16,7 @@ const CC_SPEND_QUEUE = "cc-spend-sweep";
 const CC_INGEST_QUEUE = "cc-ingest-sweep";
 const GAP_ANALYSIS_QUEUE = "gap-analysis";
 
-/** Proactive push to Tyler — raw Bot API call, no grammY instance needed. */
+/** Proactive push to the owner — raw Bot API call, no grammY instance needed. */
 export async function notifyTelegram(text: string): Promise<void> {
   const res = await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
     method: "POST",
@@ -35,7 +35,7 @@ export async function startScheduler(): Promise<PgBoss> {
   await boss.start();
 
   await boss.createQueue(DREAM_QUEUE);
-  // Nightly at 04:00 local — memory matures while Tyler sleeps
+  // Nightly at 04:00 local — memory matures while the owner sleeps
   await boss.schedule(DREAM_QUEUE, "0 4 * * *", {}, { tz: config.timezone });
 
   await boss.work(DREAM_QUEUE, async () => {

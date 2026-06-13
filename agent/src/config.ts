@@ -18,6 +18,9 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   /** Hard daily ceiling. Agent refuses to run once crossed. */
   dailySpendLimitUsd: Number(process.env.DAILY_SPEND_LIMIT_USD ?? "10"),
+  /** The person this agent serves. Set OWNER_NAME per deployment; prompts
+   *  refer to this instead of a hardcoded name so anyone can run Somnus. */
+  ownerName: process.env.OWNER_NAME ?? "your owner",
   /** Day-to-day chat model. Sonnet: the harness (memory tools + core blocks)
    *  carries most of the quality; switch live with /model in Telegram. */
   model: process.env.CHAT_MODEL ?? process.env.AGENT_MODEL ?? "claude-sonnet-4-6",

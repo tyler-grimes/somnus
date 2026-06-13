@@ -1,7 +1,7 @@
 /**
  * Human-in-the-loop approval over Telegram.
  *
- * Flow: canUseTool wants a risky action → requestApproval() sends Tyler a
+ * Flow: canUseTool wants a risky action → requestApproval() sends the owner a
  * message with Approve/Deny buttons and parks the turn on a promise →
  * telegram.ts resolves it from the callback_query → the tool call proceeds
  * or is denied. Unanswered requests deny after a timeout.
@@ -83,7 +83,7 @@ export async function requestApproval(description: string): Promise<ApprovalDeci
   );
   if (!res.ok) {
     console.error("[approvals] failed to send request:", res.status, await res.text());
-    return "deny"; // can't reach Tyler → fail closed
+    return "deny"; // can't reach owner → fail closed
   }
 
   return new Promise<ApprovalDecision>((resolve) => {

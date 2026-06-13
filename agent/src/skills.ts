@@ -1,6 +1,6 @@
 /**
  * Skill lifecycle. The dream cycle drafts SKILL.md directories into
- * .claude/skills-pending/; Tyler reviews and approves via /skills; approved
+ * .claude/skills-pending/; the owner reviews and approves via /skills; approved
  * skills live in .claude/skills/ and their frontmatter (name + description,
  * ~100 tokens each) is injected into the system prompt — progressive
  * disclosure: Somnus Reads the full SKILL.md only when a skill is relevant.

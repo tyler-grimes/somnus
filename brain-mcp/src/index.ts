@@ -217,7 +217,7 @@ server.tool(
     // Core blocks land in the system prompt of every turn, so only trusted,
     // confident facts qualify — facts distilled from ingested third-party
     // content ('dream:extract:ingested') are quarantined out until a trusted
-    // path (Tyler stating it, or supersession) re-asserts them.
+    // path (the owner stating it, or supersession) re-asserts them.
     const res = await pool.query(
       `SELECT kind, claim
          FROM facts

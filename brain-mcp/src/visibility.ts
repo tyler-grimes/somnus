@@ -4,7 +4,7 @@
  * facts.visibility ('private' | 'shared' | 'world') existed in the schema but
  * no read path referenced it — a dead control that a future share/export
  * feature would have trusted and leaked through. Every facts read now goes
- * through visibilityClause(); the audience defaults to 'owner' (Tyler's own
+ * through visibilityClause(); the audience defaults to 'owner' (the owner's own
  * agent, sees everything) and comes from BRAIN_AUDIENCE for any future
  * outward-facing deployment of this server.
  *
