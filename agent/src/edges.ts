@@ -9,7 +9,7 @@ export interface PageRow {
   id: string;
   slug: string;
   type: string;
-  effective_date: string | null;
+  effective_date: string | Date | null; // pg hydrates timestamptz as a JS Date
 }
 export interface CandidatePage extends PageRow {
   title: string;
@@ -38,7 +38,7 @@ export const EDGE_SCHEMA = z.object({
 });
 
 /** YYYY-MM-DD (UTC) — matches how daily slugs are built (Date.toISOString). */
-function utcDay(ts: string): string {
+function utcDay(ts: string | Date): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
@@ -101,23 +101,34 @@ export async function linkPageRows(
   pool: Pool,
   rows: CandidatePage[],
 ): Promise<{ inserted: number; structural: number; semantic: number }> {
-  const { extractStructured } = await import("./llm.js");
   const slugToId = new Map(rows.map((r) => [r.slug, r.id]));
+
+  // Structural edges are exact and free — insert them first so a later LLM
+  // failure can't drop them.
   const structural = structuralEdges(rows);
+  let inserted = await insertEdges(pool, structural);
 
-  const out = await extractStructured({
-    purpose: "link_pages",
-    model: config.model,
-    system:
-      `You connect pages in ${config.ownerName}'s second brain with typed relationships. ` +
-      `Only link pages that are genuinely related. Link types: ${SEMANTIC_LINK_TYPES}. ` +
-      `Use the exact slugs given in [brackets]; never invent a slug. Omit weak or speculative links.`,
-    user: rows.map((r) => `[${r.slug}] (${r.type}) ${r.title}\n${r.summary}`).join("\n\n").slice(0, 40_000),
-    schema: EDGE_SCHEMA,
-    maxTokens: 4000,
-  });
-  const semantic = resolveSemanticEdges(out.edges, slugToId);
+  // Semantic edges are best-effort. Deliberately config.model (Sonnet), NOT the
+  // Opus dream model: light classification, cost-conscious by design.
+  let semantic: EdgeSpec[] = [];
+  try {
+    const { extractStructured } = await import("./llm.js");
+    const out = await extractStructured({
+      purpose: "link_pages",
+      model: config.model,
+      system:
+        `You connect pages in ${config.ownerName}'s second brain with typed relationships. ` +
+        `Only link pages that are genuinely related. Link types: ${SEMANTIC_LINK_TYPES}. ` +
+        `Use the exact slugs given in [brackets]; never invent a slug. Omit weak or speculative links.`,
+      user: rows.map((r) => `[${r.slug}] (${r.type}) ${r.title}\n${r.summary}`).join("\n\n").slice(0, 40_000),
+      schema: EDGE_SCHEMA,
+      maxTokens: 4000,
+    });
+    semantic = resolveSemanticEdges(out.edges, slugToId);
+    inserted += await insertEdges(pool, semantic);
+  } catch (err) {
+    console.error("[edges] semantic linking failed (structural edges kept):", err);
+  }
 
-  const inserted = await insertEdges(pool, [...structural, ...semantic]);
   return { inserted, structural: structural.length, semantic: semantic.length };
 }
