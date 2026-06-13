@@ -23,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "./config.js";
-import { logEpisode, logSpend, pool, spentTodayUsd } from "./db.js";
+import { isBudgetExhausted, logEpisode, logSpend, pool } from "./db.js";
 import { requestApproval } from "./approvals.js";
 import { skillsPromptSection } from "./skills.js";
 import { envScrubbedBash, sandboxSettings, scrubbedSubprocessEnv } from "./sandbox.js";
@@ -93,8 +93,7 @@ async function decidePermission(
   if (toolName === "KillShell") return allow;
 
   if (toolName === "Bash") {
-    const command = bashCommand;
-    const hostTool = HOST_TOOL_RE.test(command);
+    const hostTool = HOST_TOOL_RE.test(bashCommand);
     // Sandboxed commands get the env-scrubbed wrapper and have any model-set
     // dangerouslyDisableSandbox forcibly stripped; only the human-gated host
     // tools run unsandboxed.
@@ -105,33 +104,33 @@ async function decidePermission(
             behavior: "allow",
             updatedInput: {
               ...input,
-              command: envScrubbedBash(command, WORKSPACE_DIR),
+              command: envScrubbedBash(bashCommand, WORKSPACE_DIR),
               dangerouslyDisableSandbox: false,
             },
           };
 
     // Plainly read-only commands — no pipes/redirects/substitution
-    if (SAFE_BASH_RE.test(command)) return allowBash();
+    if (SAFE_BASH_RE.test(bashCommand)) return allowBash();
     if (!hostTool) {
       // Layer 3: standing rules from the "Always" button — prefix match, so a
       // rule made on `node /x/script.js` also covers `node /x/script.js --flag`
       const rule = await pool.query(
         `SELECT 1 FROM command_rules WHERE starts_with($1, pattern) LIMIT 1`,
-        [command],
+        [bashCommand],
       );
       if (rule.rowCount) return allowBash();
       // Automode covers sandboxed, non-network commands. Network-touching
       // commands keep a one-tap confirm (container override excepted).
-      if (autoNow && (config.bashAutoApprove || !NETWORK_BASH_RE.test(command)))
+      if (autoNow && (config.bashAutoApprove || !NETWORK_BASH_RE.test(bashCommand)))
         return allowBash();
     }
     // Layer 4: ask the owner
-    const decision = await requestApproval(`Bash command:\n\`\`\`\n${command}\n\`\`\``);
+    const decision = await requestApproval(`Bash command:\n\`\`\`\n${bashCommand}\n\`\`\``);
     if (decision === "always") {
       // Host tools never get standing rules — each invocation is one approval.
       if (!hostTool) {
         await pool
-          .query(`INSERT INTO command_rules (pattern) VALUES ($1) ON CONFLICT DO NOTHING`, [command])
+          .query(`INSERT INTO command_rules (pattern) VALUES ($1) ON CONFLICT DO NOTHING`, [bashCommand])
           .catch(() => {});
       }
       return allowBash();
@@ -355,8 +354,8 @@ export async function runAgentTurn(
   userText: string,
   source: "telegram" | "cli" | "web",
 ): Promise<string> {
-  const spent = await spentTodayUsd();
-  if (spent >= config.dailySpendLimitUsd) {
+  const spent = await isBudgetExhausted();
+  if (spent !== null) {
     return `Daily budget exhausted ($${spent.toFixed(2)} of $${config.dailySpendLimitUsd}). I'm pausing until midnight to protect your wallet. Raise DAILY_SPEND_LIMIT_USD if this is wrong.`;
   }
 

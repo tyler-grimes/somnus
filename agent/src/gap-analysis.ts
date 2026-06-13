@@ -6,7 +6,7 @@
 import crypto from "node:crypto";
 import { z } from "zod";
 import { config } from "./config.js";
-import { pool, logFriction, spentTodayUsd } from "./db.js";
+import { pool, logFriction, isBudgetExhausted } from "./db.js";
 import { extractStructured } from "./llm.js";
 import { notifyTelegram } from "./scheduler.js";
 
@@ -14,7 +14,7 @@ const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 const SONNET_MODEL = "claude-sonnet-4-6";
 const MAX_GAPS_TO_RESEARCH = 5;
 
-export interface Gap {
+interface Gap {
   id: string;
   description: string;
   category: "open_question" | "unresolved_problem" | "missed_followup" | "research_needed";
@@ -22,7 +22,7 @@ export interface Gap {
   context: string;
 }
 
-export interface ResearchResult {
+interface ResearchResult {
   gapId: string;
   summary: string;
   confidence: "high" | "medium" | "low";
@@ -30,7 +30,7 @@ export interface ResearchResult {
   sources: string[];
 }
 
-export interface GapAnalysisSummary {
+interface GapAnalysisSummary {
   gapsFound: number;
   researched: number;
   highPriority: number;
@@ -48,7 +48,7 @@ function gapSlug(description: string): string {
   return `gap-${base}-${hash}`;
 }
 
-export async function identifyGaps(episodesLookback = 50): Promise<Gap[]> {
+async function identifyGaps(episodesLookback = 50): Promise<Gap[]> {
   const eps = await pool.query(
     `SELECT role, source, content, created_at FROM episodes
       WHERE source IN ('telegram', 'cli')
@@ -104,7 +104,7 @@ Prioritize:
     maxTokens: 4000,
   });
 
-  return out.gaps as Gap[];
+  return out.gaps;
 }
 
 async function searchMemory(query: string): Promise<{ facts: string[]; pages: string[] }> {
@@ -138,7 +138,7 @@ async function searchMemory(query: string): Promise<{ facts: string[]; pages: st
   };
 }
 
-export async function researchGap(gap: Gap): Promise<ResearchResult> {
+async function researchGap(gap: Gap): Promise<ResearchResult> {
   const memory = await searchMemory(gap.description);
 
   // TODO: wire in WebSearch MCP when available; for now only stored memory is searched
@@ -193,8 +193,8 @@ ${memoryContext}`,
   });
 
   const sources =
-    (out.sources as string[]).length > 0
-      ? (out.sources as string[])
+    out.sources.length > 0
+      ? out.sources
       : [
           memory.facts.length > 0 ? "stored_facts" : null,
           memory.pages.length > 0 ? "stored_pages" : null,
@@ -202,17 +202,17 @@ ${memoryContext}`,
 
   return {
     gapId: gap.id,
-    summary: out.summary as string,
-    confidence: out.confidence as "high" | "medium" | "low",
-    suggestedAction: out.suggestedAction as string,
+    summary: out.summary,
+    confidence: out.confidence,
+    suggestedAction: out.suggestedAction,
     sources,
   };
 }
 
 export async function runGapAnalysis(): Promise<GapAnalysisSummary> {
-  const spent = await spentTodayUsd();
-  if (spent >= config.dailySpendLimitUsd) {
-    console.log(`[gap-analysis] skipped: daily budget exhausted ($${spent.toFixed(2)})`);
+  const over = await isBudgetExhausted();
+  if (over !== null) {
+    console.log(`[gap-analysis] skipped: daily budget exhausted ($${over.toFixed(2)})`);
     return { gapsFound: 0, researched: 0, highPriority: 0, telegramSent: false };
   }
 
@@ -236,9 +236,9 @@ export async function runGapAnalysis(): Promise<GapAnalysisSummary> {
   const results: Array<{ gap: Gap; result: ResearchResult }> = [];
 
   for (const gap of actionable) {
-    const spentNow = await spentTodayUsd();
-    if (spentNow >= config.dailySpendLimitUsd) {
-      console.log(`[gap-analysis] budget hit mid-loop ($${spentNow.toFixed(2)}), stopping`);
+    const overMidLoop = await isBudgetExhausted();
+    if (overMidLoop !== null) {
+      console.log(`[gap-analysis] budget hit mid-loop ($${overMidLoop.toFixed(2)}), stopping`);
       break;
     }
 
@@ -267,7 +267,6 @@ export async function runGapAnalysis(): Promise<GapAnalysisSummary> {
         `Confidence: ${result.confidence}`,
         result.sources.length > 0 ? `Sources: ${result.sources.join(", ")}` : "",
       ]
-        .filter((l) => l !== undefined)
         .join("\n")
         .trim();
 

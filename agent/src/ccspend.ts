@@ -16,24 +16,28 @@ export interface SpoolEntry {
   dir: string;
 }
 
-export function parseSpoolLines(raw: string): SpoolEntry[] {
-  const entries: SpoolEntry[] = [];
+export function parseSpoolLines(raw: string): Array<{ entry: SpoolEntry; rawLine: string }> {
+  const results: Array<{ entry: SpoolEntry; rawLine: string }> = [];
   for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
+    const trimmed = line.trim();
+    if (!trimmed) continue;
     try {
-      const o = JSON.parse(line);
+      const o = JSON.parse(trimmed);
       if (typeof o.ts !== "string" || typeof o.usd !== "number") throw new Error("bad shape");
-      entries.push({
-        ts: o.ts,
-        usd: o.usd,
-        session_id: o.session_id ?? null,
-        dir: String(o.dir ?? ""),
+      results.push({
+        entry: {
+          ts: o.ts,
+          usd: o.usd,
+          session_id: o.session_id ?? null,
+          dir: String(o.dir ?? ""),
+        },
+        rawLine: trimmed,
       });
     } catch {
-      console.error("[cc-spend] dropping malformed line:", line.slice(0, 200));
+      console.error("[cc-spend] dropping malformed line:", trimmed.slice(0, 200));
     }
   }
-  return entries;
+  return results;
 }
 
 /** Returns the number of entries ingested. Rename-then-read keeps concurrent
@@ -53,16 +57,7 @@ export async function sweepCcSpend(spoolPath?: string): Promise<number> {
 
   const ingestFile = async (file: string): Promise<void> => {
     const raw = fs.readFileSync(file, "utf8");
-    const rawLines = raw.split("\n");
-    // Build (entry, rawLine) pairs so we can hash the original line string
-    const pairs: Array<{ entry: SpoolEntry; rawLine: string }> = [];
-    for (const line of rawLines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const [entry] = parseSpoolLines(trimmed);
-      if (entry) pairs.push({ entry, rawLine: trimmed });
-    }
-    const entries = pairs.map((p) => p.entry);
+    const pairs = parseSpoolLines(raw);
     let ok = 0;
     for (const { entry: e, rawLine } of pairs) {
       // Compute a deterministic UUID-shaped id from the raw line so that
@@ -86,9 +81,9 @@ export async function sweepCcSpend(spoolPath?: string): Promise<number> {
         console.error("[cc-spend] logSpend failed:", err);
       }
     }
-    if (entries.length > 0 && ok === 0) {
+    if (pairs.length > 0 && ok === 0) {
       // Wholesale failure (DB down?) — keep the file; orphan recovery retries
-      throw new Error(`[cc-spend] all ${entries.length} rows failed; keeping ${file} for retry`);
+      throw new Error(`[cc-spend] all ${pairs.length} rows failed; keeping ${file} for retry`);
     }
     fs.unlinkSync(file);
   };

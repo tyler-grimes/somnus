@@ -23,7 +23,7 @@ export const config = {
   ownerName: process.env.OWNER_NAME ?? "your owner",
   /** Day-to-day chat model. Sonnet: the harness (memory tools + core blocks)
    *  carries most of the quality; switch live with /model in Telegram. */
-  model: process.env.CHAT_MODEL ?? process.env.AGENT_MODEL ?? "claude-sonnet-4-6",
+  model: process.env.CHAT_MODEL ?? "claude-sonnet-4-6",
   /** Dream-cycle model. Memory consolidation compounds — errors here poison
    *  retrieval forever — so it gets the most capable model. */
   dreamModel: process.env.DREAM_MODEL ?? "claude-opus-4-8",

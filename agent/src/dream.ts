@@ -18,10 +18,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { config } from "./config.js";
-import { logEpisode, pool, spentTodayUsd } from "./db.js";
+import { logEpisode, pool, isBudgetExhausted } from "./db.js";
 import { extractStructured } from "./llm.js";
-import { SKILLS_PENDING_DIR } from "./skills.js";
-import { linkPageRows, type CandidatePage } from "./edges.js";
+import { SKILLS_PENDING_DIR, SLUG_RE } from "./skills.js";
+import { fetchCandidatePages, linkPageRows } from "./edges.js";
 
 const EPISODE_WINDOW = "36 hours"; // > daily cadence; dedupe makes re-runs safe
 
@@ -195,17 +195,9 @@ async function reflect(): Promise<string> {
 
 // ---------- Phase 3.5: derive edges between pages ----------
 async function linkPages(): Promise<string> {
-  const pages = await pool.query<CandidatePage>(
-    `SELECT id, slug, type, effective_date,
-            title, left(coalesce(compiled_truth, title), 300) AS summary
-       FROM pages
-      WHERE deleted_at IS NULL
-      ORDER BY (updated_at > now() - interval '36 hours') DESC,
-               emotional_weight DESC, updated_at DESC
-      LIMIT 40`,
-  );
-  if (pages.rowCount === 0) return "edges: no pages to link";
-  const r = await linkPageRows(pool, pages.rows);
+  const rows = await fetchCandidatePages(pool, { recencyBoost: true });
+  if (!rows.length) return "edges: no pages to link";
+  const r = await linkPageRows(pool, rows);
   return `edges: +${r.inserted} linked (${r.structural} structural, ${r.semantic} semantic candidates)`;
 }
 
@@ -388,7 +380,7 @@ async function draftSkills(): Promise<string> {
     });
 
     // #6 security: reject slugs that could escape SKILLS_PENDING_DIR via path traversal
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(out.slug)) {
+    if (!SLUG_RE.test(out.slug)) {
       console.warn(`[dream:skills] unsafe slug from LLM, skipping cluster: ${JSON.stringify(out.slug)}`);
       continue;
     }
@@ -450,9 +442,9 @@ async function decayAndPurge(): Promise<string> {
 
 // ---------- Orchestrator ----------
 export async function runDreamCycle(): Promise<string> {
-  const spent = await spentTodayUsd();
-  if (spent >= config.dailySpendLimitUsd) {
-    return `Dream cycle skipped: daily budget exhausted ($${spent.toFixed(2)}).`;
+  const over = await isBudgetExhausted();
+  if (over !== null) {
+    return `Dream cycle skipped: daily budget exhausted ($${over.toFixed(2)}).`;
   }
 
   const phases: Array<[string, () => Promise<string>]> = [
@@ -471,9 +463,9 @@ export async function runDreamCycle(): Promise<string> {
   for (const [name, phase] of phases) {
     // #13 concurrency: re-check budget before each phase so a long run can't
     // overshoot the daily limit if earlier phases consumed significant spend.
-    const midSpent = await spentTodayUsd();
-    if (midSpent >= config.dailySpendLimitUsd) {
-      lines.push(`budget exhausted mid-cycle ($${midSpent.toFixed(2)}), remaining phases skipped`);
+    const over = await isBudgetExhausted();
+    if (over !== null) {
+      lines.push(`budget exhausted mid-cycle ($${over.toFixed(2)}), remaining phases skipped`);
       break;
     }
     try {

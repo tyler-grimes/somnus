@@ -19,6 +19,8 @@ export function skillsBase(skillsDir: string, repoRoot: string): string {
   return skillsDir || path.join(repoRoot, ".claude");
 }
 
+export const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+
 const BASE = skillsBase(config.skillsDir, path.resolve(import.meta.dirname, "../.."));
 export const SKILLS_PENDING_DIR = path.join(BASE, "skills-pending");
 export const SKILLS_ACTIVE_DIR = path.join(BASE, "skills");
@@ -53,7 +55,7 @@ export function pendingSkills(): SkillMeta[] {
 }
 
 export function approveSkill(slug: string): boolean {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) return false;
+  if (!SLUG_RE.test(slug)) return false;
   const from = path.join(SKILLS_PENDING_DIR, slug);
   if (!fs.existsSync(path.join(from, "SKILL.md"))) return false;
   fs.mkdirSync(SKILLS_ACTIVE_DIR, { recursive: true });
@@ -62,7 +64,7 @@ export function approveSkill(slug: string): boolean {
 }
 
 export function rejectSkill(slug: string): boolean {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) return false;
+  if (!SLUG_RE.test(slug)) return false;
   const dir = path.join(SKILLS_PENDING_DIR, slug);
   if (!fs.existsSync(dir)) return false;
   fs.rmSync(dir, { recursive: true });

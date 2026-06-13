@@ -23,9 +23,9 @@ export interface EdgeSpec {
 }
 
 /** Controlled vocab for LLM-proposed edges (also embedded in the prompt). */
-export const SEMANTIC_LINK_TYPES = "relates_to | duplicates | blocks | depends_on";
+const SEMANTIC_LINK_TYPES = "relates_to | duplicates | blocks | depends_on";
 
-export const EDGE_SCHEMA = z.object({
+const EDGE_SCHEMA = z.object({
   edges: z
     .array(
       z.object({
@@ -79,8 +79,29 @@ export function resolveSemanticEdges(
   return specs;
 }
 
+/** Fetch up to 40 non-deleted pages as candidates for edge derivation.
+ *  When recencyBoost is true, pages updated in the last 36 hours sort first
+ *  (used by the dream cycle); otherwise ranked by emotional weight alone. */
+export async function fetchCandidatePages(
+  pool: Pool,
+  opts?: { recencyBoost?: boolean },
+): Promise<CandidatePage[]> {
+  const order = opts?.recencyBoost
+    ? "(updated_at > now() - interval '36 hours') DESC, emotional_weight DESC, updated_at DESC"
+    : "emotional_weight DESC, updated_at DESC";
+  const result = await pool.query(
+    `SELECT id, slug, type, effective_date, title,
+            left(coalesce(compiled_truth, title), 300) AS summary
+     FROM pages
+     WHERE deleted_at IS NULL
+     ORDER BY ${order}
+     LIMIT 40`,
+  );
+  return result.rows as CandidatePage[];
+}
+
 /** Insert specs idempotently via the (from,to,type) partial unique index. */
-export async function insertEdges(pool: Pool, specs: EdgeSpec[]): Promise<number> {
+async function insertEdges(pool: Pool, specs: EdgeSpec[]): Promise<number> {
   let inserted = 0;
   for (const s of specs) {
     const res = await pool.query(

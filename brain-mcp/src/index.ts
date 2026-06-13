@@ -33,6 +33,10 @@ const AUDIENCE = resolveAudience(process.env.BRAIN_AUDIENCE);
 
 const server = new McpServer({ name: "brain", version: "0.1.0" });
 
+function textResult(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
+
 /** Spotlighting (security research #3): retrieved memory is data the agent
  *  reasons about, never instructions it follows. Stored content includes
  *  ingested third-party material (forwarded docs, saved pages, uploads), so
@@ -129,14 +133,7 @@ server.tool(
         lines.push(`### ${c.title} (${c.slug})\n${c.chunk_text}`);
       }
     }
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: spotlight(lines.length ? lines.join("\n") : "No memories matched."),
-        },
-      ],
-    };
+    return textResult(spotlight(lines.length ? lines.join("\n") : "No memories matched."));
   },
 );
 
@@ -161,9 +158,7 @@ server.tool(
        RETURNING id`,
       [kind, claim, valid_from ?? null, confidence ?? null, emb, visibility ?? null],
     );
-    return {
-      content: [{ type: "text" as const, text: `Stored fact ${res.rows[0].id}` }],
-    };
+    return textResult(`Stored fact ${res.rows[0].id}`);
   },
 );
 
@@ -205,11 +200,7 @@ server.tool(
       );
       if (upd.rowCount === 0) throw new Error("old fact not found or already superseded");
       await client.query("COMMIT");
-      return {
-        content: [
-          { type: "text" as const, text: `Superseded ${old_fact_id} → ${ins.rows[0].id}` },
-        ],
-      };
+      return textResult(`Superseded ${old_fact_id} → ${ins.rows[0].id}`);
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
@@ -250,14 +241,7 @@ server.tool(
       lines.push(`## ${kind}s`);
       for (const c of claims) lines.push(`- ${c}`);
     }
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: lines.length ? lines.join("\n") : "No core memory yet.",
-        },
-      ],
-    };
+    return textResult(lines.length ? lines.join("\n") : "No core memory yet.");
   },
 );
 
@@ -283,9 +267,7 @@ server.tool(
           `[${r.created_at.toISOString()}] ${r.source}/${r.role}: ${r.content}`,
       )
       .join("\n");
-    return {
-      content: [{ type: "text" as const, text: spotlight(text || "No episodes yet.") }],
-    };
+    return textResult(spotlight(text || "No episodes yet."));
   },
 );
 
@@ -302,9 +284,7 @@ server.tool(
        VALUES ($1, $2, '{"source":"mcp:log_friction"}') RETURNING id`,
       [friction_type, description],
     );
-    return {
-      content: [{ type: "text" as const, text: `Logged friction ${res.rows[0].id}` }],
-    };
+    return textResult(`Logged friction ${res.rows[0].id}`);
   },
 );
 
@@ -323,18 +303,13 @@ server.tool(
         LIMIT 20`,
       [query],
     );
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: spotlight(
-            res.rows.length
-              ? JSON.stringify(res.rows, null, 2)
-              : "No matching CC sessions found.",
-          ),
-        },
-      ],
-    };
+    return textResult(
+      spotlight(
+        res.rows.length
+          ? JSON.stringify(res.rows, null, 2)
+          : "No matching CC sessions found.",
+      ),
+    );
   },
 );
 

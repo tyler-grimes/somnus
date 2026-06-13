@@ -3,6 +3,7 @@
  * latest daily reflection page + yesterday's spend, pushed to Telegram.
  */
 import { logEpisode, pool } from "./db.js";
+import { config } from "./config.js";
 
 export async function buildMorningBriefing(): Promise<string> {
   const today = new Date().toISOString().slice(0, 10);
@@ -47,8 +48,9 @@ export async function buildMorningBriefing(): Promise<string> {
 
   const spend = await pool.query(
     `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM spend_log
-      WHERE created_at >= date_trunc('day', now()) - interval '1 day'
-        AND created_at < date_trunc('day', now())`,
+      WHERE created_at >= date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1 - interval '1 day'
+        AND created_at < date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1`,
+    [config.timezone],
   );
   const spent = Number(spend.rows[0].total);
   if (spent > 0) lines.push(`\nYesterday's model spend: $${spent.toFixed(2)}`);

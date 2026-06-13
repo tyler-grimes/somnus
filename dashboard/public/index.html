@@ -536,6 +536,9 @@ function makeWindow(def, geo){
 }
 function raise(id){ els[id].win.style.zIndex = ++zTop; }
 
+const ANIM_MS = 380;
+function animPlace(e){ e.win.style.transition='transform .35s ease, width .35s, height .35s'; place(e); setTimeout(()=>{ if(e.win) e.win.style.transition=''; }, ANIM_MS); }
+
 function setFocus(id){
   focusedId = id;
   for(const k in els){ els[k].win.classList.toggle('dim', k!==id); els[k].win.classList.toggle('focused', k===id); }
@@ -544,16 +547,13 @@ function setFocus(id){
   e._restore = {x:e.x,y:e.y,w:e.w,h:e.h};
   e.w = Math.min(innerWidth*0.6, 700); e.h = Math.min(innerHeight*0.70, 580);
   e.x = (innerWidth-e.w)/2; e.y = (innerHeight-e.h)/2;
-  e.win.style.transition='transform .35s ease, width .35s, height .35s';
-  place(e); raise(id);
-  setTimeout(()=>{ if(e.win) e.win.style.transition=''; },380);
+  animPlace(e); raise(id);
 }
 function releaseFocus(){
   if(!focusedId) return;
   const e = els[focusedId];
   if(e && e._restore){ Object.assign(e, e._restore); delete e._restore;
-    e.win.style.transition='transform .35s ease, width .35s, height .35s'; place(e);
-    setTimeout(()=>{ if(e.win) e.win.style.transition=''; },380); }
+    animPlace(e); }
   for(const k in els){ els[k].win.classList.remove('dim','focused'); }
   bmo.classList.remove('bg');
   focusedId=null;
@@ -827,7 +827,7 @@ function updateBmoState(){
   if(currentMood !== 'thinking' && currentMood !== 'happy'){
     if(dreaming){
       setMood('dreaming');
-    } else if(hr >= 0 && hr < 6){
+    } else if(hr < 6){
       setMood('resting');
     } else if(currentMood === 'dreaming' || currentMood === 'resting'){
       setMood('awake');

@@ -37,20 +37,12 @@ export async function logSpend(s: {
   costUsd: number;
   createdAt?: string;
 }): Promise<void> {
-  if (s.id !== undefined) {
-    await pool.query(
-      `INSERT INTO spend_log (id, model, purpose, input_tokens, output_tokens, cost_usd, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()))
-       ON CONFLICT (id) DO NOTHING`,
-      [s.id, s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
-    );
-  } else {
-    await pool.query(
-      `INSERT INTO spend_log (model, purpose, input_tokens, output_tokens, cost_usd, created_at)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))`,
-      [s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
-    );
-  }
+  await pool.query(
+    `INSERT INTO spend_log (id, model, purpose, input_tokens, output_tokens, cost_usd, created_at)
+     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, COALESCE($7, now()))
+     ON CONFLICT (id) DO NOTHING`,
+    [s.id ?? null, s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
+  );
 }
 
 export async function logFriction(f: {
@@ -75,4 +67,10 @@ export async function spentTodayUsd(): Promise<number> {
     [config.timezone],
   );
   return Number(res.rows[0].total);
+}
+
+/** Returns total spend if >= daily limit, otherwise null. */
+export async function isBudgetExhausted(): Promise<number | null> {
+  const total = await spentTodayUsd();
+  return total >= config.dailySpendLimitUsd ? total : null;
 }

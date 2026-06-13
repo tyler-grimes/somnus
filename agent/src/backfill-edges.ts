@@ -3,19 +3,12 @@
  *    docker compose --profile agent exec -T agent npm run backfill-edges
  *  Idempotent (ON CONFLICT DO NOTHING) — safe to run more than once. */
 import { pool } from "./db.js";
-import { linkPageRows, type CandidatePage } from "./edges.js";
+import { linkPageRows, fetchCandidatePages } from "./edges.js";
 
 async function main() {
-  const pages = await pool.query<CandidatePage>(
-    `SELECT id, slug, type, effective_date,
-            title, left(coalesce(compiled_truth, title), 300) AS summary
-       FROM pages
-      WHERE deleted_at IS NULL
-      ORDER BY emotional_weight DESC, updated_at DESC
-      LIMIT 40`,
-  );
-  console.log(`[backfill-edges] linking ${pages.rowCount} pages`);
-  const r = await linkPageRows(pool, pages.rows);
+  const rows = await fetchCandidatePages(pool);
+  console.log(`[backfill-edges] linking ${rows.length} pages`);
+  const r = await linkPageRows(pool, rows);
   console.log(`[backfill-edges] inserted ${r.inserted} edges (${r.structural} structural, ${r.semantic} semantic candidates)`);
   await pool.end();
 }
