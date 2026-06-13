@@ -5,146 +5,437 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>Somnus · console</title>
 <style>
-  :root {
-    --bg0:#06050e; --bg1:#0c0a1e;
-    --ink:#cdc9ec; --dim:#7a769e; --faint:#4b4870;
-    --cyan:#6ee7ff; --violet:#b39dff; --moon:#eae6ff;
-    --win:rgba(18,16,38,0.72); --win-edge:rgba(140,130,220,0.22);
-    --glow:rgba(120,160,255,0.55);
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  }
-  * { box-sizing:border-box; }
-  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg0);
-    color:var(--ink); font-family:var(--mono); font-size:13px;
-    -webkit-font-smoothing:antialiased; user-select:none; }
-  canvas { position:fixed; inset:0; width:100%; height:100%; }
-  #bg { z-index:0; }
-  #links { z-index:1; pointer-events:none; }
-  #stage { position:fixed; inset:0; z-index:2; }
+:root{
+  --bg:#282828; --bg-h:#1d2021; --bg-s:#32302f; --fg:#ebdbb2; --gray:#928374;
+  --red:#fb4934; --green:#b8bb26; --yellow:#fabd2f; --blue:#83a598;
+  --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
 
-  /* ---- Somnus core ---- */
-  #core {
-    position:fixed; left:50%; top:50%; width:160px; height:160px;
-    transform:translate(-50%,-50%); z-index:3; cursor:pointer;
-    --gx:50%; --gy:42%;
-    --pulse:0;
-  }
-  #core .orb {
-    position:absolute; inset:0; border-radius:50%;
-    background:
-      radial-gradient(40% 40% at var(--gx) var(--gy), rgba(255,255,255,0.95), rgba(180,200,255,0.5) 35%, transparent 62%),
-      radial-gradient(circle at 50% 50%, #2a2a55 0%, #14132e 55%, #0b0a1c 100%);
-    box-shadow:
-      0 0 60px 8px var(--glow),
-      0 0 140px 30px rgba(110,150,255,calc(0.18 + var(--pulse)*0.4)),
-      inset 0 0 50px rgba(120,150,255,0.25);
-    animation:breathe 7s ease-in-out infinite;
-    transition:box-shadow .4s ease;
-  }
-  #core .ring {
-    position:absolute; inset:-14px; border-radius:50%;
-    border:1px solid rgba(140,160,255,0.18);
-    box-shadow:0 0 24px rgba(110,150,255,0.15) inset;
-    animation:spin 60s linear infinite;
-  }
-  #core .ring.r2 { inset:-26px; border-color:rgba(180,150,255,0.12);
-    animation-duration:95s; animation-direction:reverse; }
-  #core .label {
-    position:absolute; left:50%; top:calc(100% + 18px); transform:translateX(-50%);
-    text-align:center; white-space:nowrap; pointer-events:none; }
-  #core .name { letter-spacing:.5em; color:var(--moon); font-size:13px; text-shadow:0 0 12px var(--glow); }
-  #core .state { margin-top:5px; font-size:10px; letter-spacing:.28em; color:var(--cyan); text-transform:uppercase; opacity:.85; }
-  #core.dreaming .orb { animation:breathe 4s ease-in-out infinite; }
-  #core.dreaming { --gx:50%; --gy:50%; }
-  #core.dragwatch .orb { box-shadow:0 0 80px 12px var(--glow), 0 0 180px 50px rgba(140,120,255,0.35), inset 0 0 60px rgba(150,170,255,0.4); }
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; overflow:hidden;
+  background:var(--bg); color:var(--fg);
+  font-family:var(--mono); font-size:13px;
+  -webkit-font-smoothing:none; image-rendering:pixelated;
+  user-select:none; }
 
-  @keyframes breathe { 0%,100%{ transform:translate(-50%,-50%) scale(1);} 50%{ transform:translate(-50%,-50%) scale(1.045);} }
-  @keyframes spin { to { transform:rotate(360deg);} }
+/* scanline overlay */
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background:repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+}
 
-  /* ---- floating windows ---- */
-  .win {
-    position:absolute; min-width:220px; min-height:120px; width:340px; height:260px;
-    background:var(--win); backdrop-filter:blur(14px) saturate(1.2);
-    -webkit-backdrop-filter:blur(14px) saturate(1.2);
-    border:1px solid var(--win-edge); border-radius:12px;
-    box-shadow:0 18px 60px -20px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3),
-      0 0 30px -10px var(--accent, var(--glow));
-    display:flex; flex-direction:column; overflow:hidden;
-    transition:box-shadow .3s ease, opacity .4s ease, filter .4s ease;
-    opacity:.96; top:0; left:0;
-  }
-  .win.dim { opacity:.28; filter:saturate(.5) blur(.4px); }
-  .win.focused { box-shadow:0 24px 80px -16px rgba(0,0,0,0.85), 0 0 40px -4px var(--accent, var(--glow)); opacity:1; }
-  .win .bar {
-    display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:grab;
-    background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0));
-    border-bottom:1px solid rgba(140,130,220,0.14); flex:0 0 auto; touch-action:none;
-  }
-  .win .bar:active { cursor:grabbing; }
-  .win .dot { width:9px; height:9px; border-radius:50%; background:var(--accent,#6ee7ff);
-    box-shadow:0 0 10px var(--accent,#6ee7ff); flex:0 0 auto; }
-  .win .ttl { letter-spacing:.18em; text-transform:uppercase; font-size:11px; color:var(--ink); flex:1; }
-  .win .ttl small { color:var(--dim); letter-spacing:.05em; text-transform:none; }
-  .win .body { flex:1; overflow:auto; padding:10px 12px; user-select:text; scrollbar-width:thin;
-    scrollbar-color:rgba(140,130,220,0.4) transparent; }
-  .win .body::-webkit-scrollbar { width:7px; }
-  .win .body::-webkit-scrollbar-thumb { background:rgba(140,130,220,0.35); border-radius:4px; }
-  .win .grip { position:absolute; right:2px; bottom:2px; width:16px; height:16px; cursor:nwse-resize; touch-action:none;
-    background:linear-gradient(135deg, transparent 50%, rgba(150,160,255,0.5) 50%, rgba(150,160,255,0.5) 62%, transparent 62%, transparent 74%, rgba(150,160,255,0.4) 74%);
-    border-bottom-right-radius:12px; }
+#stage{ position:fixed; inset:0; z-index:2; }
 
-  /* content bits */
-  .row { padding:6px 0; border-bottom:1px dashed rgba(120,120,170,0.12); line-height:1.45; }
-  .row:last-child { border-bottom:0; }
-  .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; letter-spacing:.06em;
-    background:rgba(110,231,255,0.12); color:var(--cyan); border:1px solid rgba(110,231,255,0.25); }
-  .tag.v { background:rgba(179,157,255,0.12); color:var(--violet); border-color:rgba(179,157,255,0.28); }
-  .meta { color:var(--dim); font-size:10px; }
-  .big { font-size:34px; color:var(--moon); text-shadow:0 0 18px var(--glow); letter-spacing:.02em; }
-  .sub { color:var(--dim); font-size:11px; margin-top:2px; }
-  .bars { display:flex; align-items:flex-end; gap:6px; height:70px; margin-top:14px; }
-  .bars .b { flex:1; background:linear-gradient(180deg,var(--cyan),rgba(110,231,255,0.15));
-    border-radius:3px 3px 0 0; min-height:2px; position:relative; }
-  .bars .b span { position:absolute; bottom:-16px; left:0; right:0; text-align:center; font-size:9px; color:var(--faint); }
-  .state-badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 7px; border-radius:5px; }
-  .s-completed { color:#7ef0c0; background:rgba(126,240,192,0.1); border:1px solid rgba(126,240,192,0.25); }
-  .s-active,.s-created { color:var(--cyan); background:rgba(110,231,255,0.12); border:1px solid rgba(110,231,255,0.3); }
-  .s-failed { color:#ff9aa8; background:rgba(255,154,168,0.1); border:1px solid rgba(255,154,168,0.3); }
-  .s-null { color:var(--faint); border:1px solid rgba(120,120,170,0.2); }
-  .empty { color:var(--faint); font-style:italic; padding:8px 0; }
-  .err { color:#ff9aa8; }
+/* ===================== BMO ===================== */
+#bmo{
+  position:fixed; left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  z-index:3;
+  width:220px;
+  display:flex; flex-direction:column; align-items:center;
+  gap:0;
+}
 
-  #hint { position:fixed; left:14px; bottom:12px; z-index:4; color:var(--faint); font-size:10px;
-    letter-spacing:.08em; pointer-events:none; }
-  #reset { position:fixed; right:14px; bottom:12px; z-index:4; color:var(--dim); font-size:10px;
-    letter-spacing:.1em; cursor:pointer; background:none; border:1px solid rgba(120,120,170,0.25);
-    padding:4px 9px; border-radius:6px; font-family:var(--mono); }
-  #reset:hover { color:var(--cyan); border-color:rgba(110,231,255,0.4); }
-  @media (prefers-reduced-motion: reduce) { #core .orb,#core .ring { animation:none !important; } }
+/* body */
+#bmo .bmo-body{
+  position:relative;
+  width:200px; height:240px;
+  background:var(--aqua);
+  border:3px solid var(--bg-h);
+  box-shadow:4px 4px 0 var(--bg-h);
+  border-radius:18px 18px 12px 12px;
+  display:flex; flex-direction:column; align-items:center;
+  padding:8px 8px 6px;
+}
+
+/* speaker dots */
+#bmo .bmo-body::before{
+  content:'· · ·';
+  position:absolute; top:8px; right:14px;
+  font-size:9px; letter-spacing:3px;
+  color:rgba(0,0,0,0.3);
+}
+
+/* screen */
+.bmo-screen{
+  width:174px; height:162px;
+  background:var(--bg-h);
+  border:3px solid var(--bg-h);
+  box-shadow:inset 2px 2px 0 #000, 2px 2px 0 rgba(0,0,0,0.5);
+  border-radius:4px;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+  position:relative;
+}
+
+/* face layer */
+#bmo-face{
+  position:absolute; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:6px;
+  pointer-events:none;
+  z-index:1;
+  transition:opacity 0.3s;
+}
+#bmo-face.hidden{ opacity:0; }
+
+#bmo-face .eye{
+  display:inline-block;
+  width:10px; height:10px;
+  background:var(--aqua);
+  border:2px solid var(--bg-h);
+  border-radius:2px;
+}
+#bmo-face .eyes{ display:flex; gap:18px; }
+
+#bmo-face .mouth{
+  width:28px; height:6px;
+  background:var(--aqua);
+  border:2px solid var(--bg-h);
+  border-radius:2px;
+}
+
+/* awake: slow blink */
+#bmo-face[data-mood="awake"] .eye{
+  animation:blink 4s ease-in-out infinite;
+}
+@keyframes blink{
+  0%,90%,100%{ transform:scaleY(1); }
+  95%{ transform:scaleY(0.1); }
+}
+
+/* thinking: eye dots, pulse */
+#bmo-face[data-mood="thinking"] .eye{
+  background:var(--yellow);
+  animation:think-pulse 0.5s ease-in-out infinite alternate;
+}
+#bmo-face[data-mood="thinking"] .mouth{
+  background:var(--yellow);
+}
+@keyframes think-pulse{
+  from{ opacity:0.5; }
+  to{ opacity:1; }
+}
+
+/* happy: curved mouth */
+#bmo-face[data-mood="happy"] .eye{
+  background:var(--green);
+  transform:scaleY(0.6);
+}
+#bmo-face[data-mood="happy"] .mouth{
+  background:var(--green);
+  border-radius:0 0 6px 6px;
+  height:8px;
+}
+
+/* dreaming: closed eyes, slow breath */
+#bmo-face[data-mood="dreaming"] .eye{
+  background:var(--purple);
+  transform:scaleY(0.15);
+}
+#bmo-face[data-mood="dreaming"] .mouth{
+  background:var(--purple);
+  width:16px;
+}
+#bmo-face[data-mood="dreaming"]{
+  animation:dream-breath 3s ease-in-out infinite;
+}
+@keyframes dream-breath{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.04); }
+}
+
+/* resting: dim, still */
+#bmo-face[data-mood="resting"] .eye{
+  background:var(--gray);
+  transform:scaleY(0.15);
+}
+#bmo-face[data-mood="resting"] .mouth{
+  background:var(--gray);
+  width:20px;
+}
+
+/* chat log + form inside screen */
+#chatlog{
+  position:absolute; inset:0 0 34px 0;
+  overflow-y:auto; overflow-x:hidden;
+  padding:5px 6px;
+  display:flex; flex-direction:column; gap:3px;
+  scrollbar-width:thin; scrollbar-color:var(--gray) transparent;
+  z-index:2;
+}
+#chatlog .msg{
+  font-size:10px; line-height:1.4; word-break:break-word;
+  padding:2px 4px;
+  border:1px solid transparent;
+  max-width:100%;
+}
+#chatlog .msg.you{
+  color:var(--yellow); border-color:rgba(250,189,47,0.3);
+  align-self:flex-end; text-align:right;
+  background:rgba(250,189,47,0.07);
+}
+#chatlog .msg.somnus{
+  color:var(--aqua); border-color:rgba(142,192,124,0.3);
+  align-self:flex-start;
+  background:rgba(142,192,124,0.07);
+}
+#chatlog .msg.sys{
+  color:var(--gray); font-style:italic;
+  align-self:center; font-size:9px;
+}
+
+#chatform{
+  position:absolute; bottom:0; left:0; right:0; height:34px;
+  display:flex; border-top:2px solid var(--bg-s);
+  z-index:2; background:var(--bg);
+}
+#chatinput{
+  flex:1; background:transparent; border:none; outline:none;
+  color:var(--fg); font-family:var(--mono); font-size:10px;
+  padding:0 6px; letter-spacing:0.03em;
+}
+#chatinput::placeholder{ color:var(--gray); }
+#chatform button{
+  background:none; border:none; border-left:2px solid var(--bg-s);
+  color:var(--green); cursor:pointer; padding:0 8px;
+  font-size:11px; font-family:var(--mono);
+  transition:color 0.1s;
+}
+#chatform button:hover{ color:var(--yellow); }
+
+/* BMO controls bar */
+.bmo-controls{
+  width:174px;
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:6px;
+  padding:0 2px;
+}
+
+.dpad{
+  display:grid; grid-template-columns:14px 14px 14px; grid-template-rows:14px 14px 14px;
+  gap:1px;
+}
+.dpad::before{
+  content:'';
+  display:block;
+  grid-column:1/4; grid-row:1/4;
+  background:
+    linear-gradient(var(--bg-h) 0, var(--bg-h) 100%) center / 14px 42px no-repeat,
+    linear-gradient(var(--bg-h) 0, var(--bg-h) 100%) center / 42px 14px no-repeat;
+  border:2px solid var(--bg-h);
+  box-shadow:1px 1px 0 var(--bg-h);
+}
+
+.bmo-buttons{
+  display:grid; grid-template-columns:14px 14px; gap:4px;
+}
+.btn{
+  display:block; width:14px; height:14px; border-radius:50%;
+  border:2px solid var(--bg-h);
+  box-shadow:1px 1px 0 var(--bg-h);
+}
+.btn.green{ background:var(--green); }
+.btn.red{ background:var(--red); }
+.btn.blue{ background:var(--blue); }
+.btn.yellow{ background:var(--yellow); }
+
+/* arms/legs */
+#bmo .bmo-arms{
+  position:absolute;
+  top:60px; left:-14px; right:-14px;
+  display:flex; justify-content:space-between;
+  pointer-events:none;
+}
+.arm{
+  width:12px; height:50px;
+  background:var(--aqua);
+  border:3px solid var(--bg-h);
+  box-shadow:3px 3px 0 var(--bg-h);
+  border-radius:4px;
+}
+#bmo .bmo-legs{
+  display:flex; gap:18px; margin-top:4px;
+}
+.leg{
+  width:22px; height:20px;
+  background:var(--aqua);
+  border:3px solid var(--bg-h);
+  box-shadow:3px 3px 0 var(--bg-h);
+  border-radius:0 0 6px 6px;
+}
+
+/* BMO label */
+#bmo .bmo-label{
+  margin-top:3px;
+  font-size:9px; letter-spacing:0.3em;
+  color:var(--gray); text-transform:uppercase;
+}
+
+/* ===================== WINDOWS ===================== */
+.win{
+  position:absolute; min-width:220px; min-height:120px; width:320px; height:240px;
+  background:var(--bg-s);
+  border:3px solid var(--bg-h);
+  box-shadow:4px 4px 0 var(--bg-h);
+  display:flex; flex-direction:column; overflow:hidden;
+  opacity:1; top:0; left:0;
+}
+.win.dim{ opacity:0.3; filter:saturate(0.4); }
+.win.focused{ box-shadow:4px 4px 0 var(--accent, var(--blue)); z-index:100; opacity:1; }
+
+.win .bar{
+  display:flex; align-items:center; gap:6px; padding:5px 8px;
+  cursor:grab; background:var(--bg-h);
+  border-bottom:3px solid var(--bg-h);
+  flex:0 0 auto; touch-action:none;
+}
+.win .bar:active{ cursor:grabbing; }
+
+.win .dots{ display:flex; gap:4px; }
+.win .dot{
+  width:8px; height:8px;
+  background:var(--accent, var(--blue));
+  border:2px solid var(--bg-h);
+  box-shadow:1px 1px 0 var(--bg-h);
+  flex:0 0 auto;
+}
+.win .dot2{ background:var(--bg); }
+.win .dot3{ background:var(--bg-s); }
+
+.win .ttl{
+  letter-spacing:0.18em; text-transform:uppercase;
+  font-size:10px; color:var(--fg); flex:1;
+}
+.win .ttl small{ color:var(--gray); letter-spacing:0.04em; text-transform:none; }
+
+.win .body{
+  flex:1; overflow:auto; padding:8px 10px; user-select:text;
+  scrollbar-width:thin; scrollbar-color:var(--gray) transparent;
+}
+.win .body::-webkit-scrollbar{ width:5px; }
+.win .body::-webkit-scrollbar-thumb{ background:var(--gray); border-radius:0; }
+
+.win .grip{
+  position:absolute; right:0; bottom:0; width:14px; height:14px;
+  cursor:nwse-resize; touch-action:none;
+  background:linear-gradient(135deg, transparent 50%, var(--gray) 50%, var(--gray) 62%, transparent 62%, transparent 74%, var(--gray) 74%);
+}
+
+/* content bits */
+.row{
+  padding:5px 0;
+  border-bottom:1px solid var(--bg-h);
+  line-height:1.45;
+}
+.row:last-child{ border-bottom:0; }
+.tag{
+  display:inline-block; padding:1px 5px;
+  font-size:9px; letter-spacing:0.05em;
+  background:rgba(131,165,152,0.15); color:var(--blue);
+  border:1px solid var(--blue);
+}
+.tag.v{ background:rgba(211,134,155,0.15); color:var(--purple); border-color:var(--purple); }
+.meta{ color:var(--gray); font-size:10px; }
+.big{ font-size:32px; color:var(--fg); letter-spacing:0.02em; }
+.sub{ color:var(--gray); font-size:10px; margin-top:2px; }
+.bars{ display:flex; align-items:flex-end; gap:4px; height:60px; margin-top:12px; }
+.bars .b{
+  flex:1; background:var(--blue);
+  min-height:2px; position:relative;
+}
+.bars .b span{
+  position:absolute; bottom:-14px; left:0; right:0;
+  text-align:center; font-size:9px; color:var(--gray);
+}
+.state-badge{
+  font-size:9px; letter-spacing:0.1em; text-transform:uppercase;
+  padding:1px 5px; border:1px solid;
+}
+.s-completed{ color:var(--green); border-color:var(--green); }
+.s-active,.s-created{ color:var(--blue); border-color:var(--blue); }
+.s-failed{ color:var(--red); border-color:var(--red); }
+.s-null{ color:var(--gray); border-color:var(--gray); }
+.empty{ color:var(--gray); font-style:italic; padding:6px 0; }
+.err{ color:var(--red); }
+
+#hint{
+  position:fixed; left:12px; bottom:10px; z-index:4;
+  color:var(--gray); font-size:9px; letter-spacing:0.1em; pointer-events:none;
+}
+#reset{
+  position:fixed; right:12px; bottom:10px; z-index:4;
+  color:var(--gray); font-size:9px; letter-spacing:0.1em;
+  cursor:pointer; background:none;
+  border:2px solid var(--bg-h);
+  box-shadow:2px 2px 0 var(--bg-h);
+  padding:3px 8px; font-family:var(--mono);
+}
+#reset:hover{ color:var(--yellow); border-color:var(--yellow); }
+
+@media (prefers-reduced-motion: reduce){
+  #bmo-face .eye, #bmo-face{ animation:none !important; }
+}
 </style>
 </head>
 <body>
-<canvas id="bg"></canvas>
-<canvas id="links"></canvas>
 <div id="stage"></div>
-<div id="core" title="Somnus">
-  <div class="ring r2"></div><div class="ring"></div>
-  <div class="orb"></div>
-  <div class="label"><div class="name">SOMNUS</div><div class="state" id="coreState">awake</div></div>
+
+<!-- BMO -->
+<div id="bmo">
+  <div class="bmo-body">
+    <div class="bmo-arms">
+      <div class="arm"></div>
+      <div class="arm" style="box-shadow:-3px 3px 0 var(--bg-h)"></div>
+    </div>
+    <div class="bmo-screen">
+      <div id="bmo-face" data-mood="awake">
+        <div class="eyes"><span class="eye l"></span><span class="eye r"></span></div>
+        <span class="mouth"></span>
+      </div>
+      <div id="chatlog" class="chatlog"></div>
+      <form id="chatform">
+        <input id="chatinput" autocomplete="off" placeholder="talk to somnus…" />
+        <button type="submit">&#9654;</button>
+      </form>
+    </div>
+    <div class="bmo-controls">
+      <div class="dpad"></div>
+      <div class="bmo-buttons">
+        <span class="btn green"></span><span class="btn red"></span>
+        <span class="btn blue"></span><span class="btn yellow"></span>
+      </div>
+    </div>
+  </div>
+  <div class="bmo-legs">
+    <div class="leg"></div>
+    <div class="leg"></div>
+  </div>
+  <div class="bmo-label">SOMNUS</div>
 </div>
-<div id="hint">drag titlebars · drag corner to resize · double-click a window to focus · click the void to release</div>
+
+<div id="hint">drag titlebars · corner to resize · dblclick to focus · click void to release</div>
 <button id="reset">reset layout</button>
 
 <script>
 const $ = (s,r=document)=>r.querySelector(s);
-const stage = $('#stage'), core = $('#core'), coreState = $('#coreState');
+const stage = $('#stage');
 
+// ===================== WINDOWS =====================
 const WINDOWS = [
-  { id:'memory',    title:'memory',    sub:'facts',     accent:'#b39dff', api:'/api/memory',     render:renderMemory },
-  { id:'episodes',  title:'episodes',  sub:'dialogue',  accent:'#6ee7ff', api:'/api/episodes',   render:renderEpisodes },
-  { id:'sessions',  title:'sessions',  sub:'cc.sh',     accent:'#7ef0c0', api:'/api/cc-sessions',render:renderSessions },
-  { id:'spend',     title:'spend',     sub:'usd',       accent:'#ffd479', api:'/api/spend',      render:renderSpend },
-  { id:'scheduler', title:'scheduler', sub:'dream · gaps · brief', accent:'#ff9ec7', api:'/api/scheduler', render:renderScheduler },
+  { id:'memory',    title:'memory',    sub:'facts',     accent:'#d3869b', api:'/api/memory',      render:renderMemory },
+  { id:'episodes',  title:'episodes',  sub:'dialogue',  accent:'#83a598', api:'/api/episodes',    render:renderEpisodes },
+  { id:'sessions',  title:'sessions',  sub:'cc.sh',     accent:'#b8bb26', api:'/api/cc-sessions', render:renderSessions },
+  { id:'spend',     title:'spend',     sub:'usd',       accent:'#fabd2f', api:'/api/spend',       render:renderSpend },
+  { id:'scheduler', title:'scheduler', sub:'dream · gaps · brief', accent:'#fe8019', api:'/api/scheduler', render:renderScheduler },
 ];
 const els = {};
 let zTop = 10;
@@ -152,14 +443,14 @@ let focusedId = null;
 
 function defaultLayout(){
   const W = innerWidth, H = innerHeight, cx = W/2, cy = H/2;
-  const ww = Math.max(260, Math.min(360, W*0.30)), wh = Math.max(200, Math.min(280, H*0.34));
-  const R = Math.min(W,H)*0.42 + 70;
+  const ww = Math.max(240, Math.min(340, W*0.28)), wh = Math.max(180, Math.min(260, H*0.32));
+  const R = Math.min(W,H)*0.40 + 80;
   const order = ['scheduler','memory','episodes','sessions','spend'];
   const layout = {};
   order.forEach((id,i)=>{
     const a = (-Math.PI/2) + i*(2*Math.PI/order.length);
     let x = cx + Math.cos(a)*R - ww/2;
-    let y = cy + Math.sin(a)*R*0.80 - wh/2;
+    let y = cy + Math.sin(a)*R*0.78 - wh/2;
     x = Math.max(12, Math.min(W-ww-12, x));
     y = Math.max(12, Math.min(H-wh-12, y));
     layout[id] = { x, y, w:ww, h:wh };
@@ -181,8 +472,10 @@ function makeWindow(def, geo){
   const win = document.createElement('div');
   win.className = 'win'; win.style.setProperty('--accent', def.accent);
   win.innerHTML = `
-    <div class="bar"><span class="dot"></span>
-      <span class="ttl">${def.title} <small>${def.sub}</small></span></div>
+    <div class="bar">
+      <div class="dots"><span class="dot"></span><span class="dot dot2"></span><span class="dot dot3"></span></div>
+      <span class="ttl">${def.title} <small>${def.sub}</small></span>
+    </div>
     <div class="body"><div class="empty">connecting…</div></div>
     <div class="grip"></div>`;
   stage.appendChild(win);
@@ -197,74 +490,46 @@ function makeWindow(def, geo){
     if(ev.target.closest('.grip')) return;
     ev.preventDefault(); bar.setPointerCapture(ev.pointerId);
     const sx=ev.clientX, sy=ev.clientY, ox=e.x, oy=e.y;
-    core.classList.add('dragwatch');
     const move = m=>{
       e.x = Math.max(-e.w*0.6, Math.min(innerWidth-40, ox + (m.clientX-sx)));
       e.y = Math.max(0, Math.min(innerHeight-40, oy + (m.clientY-sy)));
-      place(e); gazeToward(e);
+      place(e);
     };
-    const up = ()=>{ bar.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
-      core.classList.remove('dragwatch'); saveLayout(); };
+    const up = ()=>{ bar.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up); saveLayout(); };
     bar.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
   });
   grip.addEventListener('pointerdown', ev=>{
     ev.preventDefault(); ev.stopPropagation(); grip.setPointerCapture(ev.pointerId);
     const sx=ev.clientX, sy=ev.clientY, ow=e.w, oh=e.h;
-    core.classList.add('dragwatch');
-    const move = m=>{ e.w=Math.max(220, ow+(m.clientX-sx)); e.h=Math.max(120, oh+(m.clientY-sy)); place(e); gazeToward(e); };
-    const up = ()=>{ grip.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
-      core.classList.remove('dragwatch'); saveLayout(); };
+    const move = m=>{ e.w=Math.max(220, ow+(m.clientX-sx)); e.h=Math.max(120, oh+(m.clientY-sy)); place(e); };
+    const up = ()=>{ grip.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up); saveLayout(); };
     grip.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
   });
   return e;
 }
 function raise(id){ els[id].win.style.zIndex = ++zTop; }
-function center(e){ return { x:e.x + e.w/2, y:e.y + e.h/2 }; }
 
 function setFocus(id){
   focusedId = id;
   for(const k in els){ els[k].win.classList.toggle('dim', k!==id); els[k].win.classList.toggle('focused', k===id); }
   const e = els[id];
   e._restore = {x:e.x,y:e.y,w:e.w,h:e.h};
-  e.w = Math.min(innerWidth*0.6, 720); e.h = Math.min(innerHeight*0.72, 620);
+  e.w = Math.min(innerWidth*0.6, 700); e.h = Math.min(innerHeight*0.70, 580);
   e.x = (innerWidth-e.w)/2; e.y = (innerHeight-e.h)/2;
-  e.win.style.transition='transform .45s cubic-bezier(.2,.8,.2,1), width .45s, height .45s, box-shadow .3s, opacity .4s';
-  place(e); raise(id); gazeToward(e);
-  setTimeout(()=>{ if(e.win) e.win.style.transition=''; },480);
+  e.win.style.transition='transform .35s ease, width .35s, height .35s';
+  place(e); raise(id);
+  setTimeout(()=>{ if(e.win) e.win.style.transition=''; },380);
 }
 function releaseFocus(){
   if(!focusedId) return;
   const e = els[focusedId];
   if(e && e._restore){ Object.assign(e, e._restore); delete e._restore;
-    e.win.style.transition='transform .45s cubic-bezier(.2,.8,.2,1), width .45s, height .45s'; place(e);
-    setTimeout(()=>{ if(e.win) e.win.style.transition=''; },480); }
+    e.win.style.transition='transform .35s ease, width .35s, height .35s'; place(e);
+    setTimeout(()=>{ if(e.win) e.win.style.transition=''; },380); }
   for(const k in els){ els[k].win.classList.remove('dim','focused'); }
   focusedId=null;
 }
 stage.addEventListener('pointerdown', ev=>{ if(ev.target===stage) releaseFocus(); });
-core.addEventListener('click', releaseFocus);
-
-// ---- gaze ----
-let gaze = {x:0.5,y:0.42}, gazeTarget={x:0.5,y:0.42};
-let activeLink=null, activeLinkUntil=0;
-function gazeToward(e){
-  const c = center(e), cx=innerWidth/2, cy=innerHeight/2;
-  const dx=c.x-cx, dy=c.y-cy, d=Math.hypot(dx,dy)||1;
-  gazeTarget = { x:0.5 + (dx/d)*0.26, y:0.42 + (dy/d)*0.22 };
-  activeLink = e.def.id; activeLinkUntil = performance.now()+900;
-}
-function gazeIdle(){ gazeTarget = {x:0.5,y:0.42}; }
-setInterval(()=>{ if(!core.classList.contains('dragwatch') && performance.now()>activeLinkUntil) gazeIdle(); }, 1500);
-
-let pulseV=0;
-function ripple(){ pulseV=1; }
-function tickCore(){
-  gaze.x += (gazeTarget.x-gaze.x)*0.12; gaze.y += (gazeTarget.y-gaze.y)*0.12;
-  core.style.setProperty('--gx',(gaze.x*100).toFixed(1)+'%');
-  core.style.setProperty('--gy',(gaze.y*100).toFixed(1)+'%');
-  pulseV *= 0.94; core.style.setProperty('--pulse', pulseV.toFixed(3));
-  requestAnimationFrame(tickCore);
-}
 
 // =================== rendering ===================
 function timeAgo(ts){ if(!ts) return ''; const s=(Date.now()-new Date(ts).getTime())/1000;
@@ -272,14 +537,11 @@ function timeAgo(ts){ if(!ts) return ''; const s=(Date.now()-new Date(ts).getTim
   if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d'; }
 function esc(t){ return (t==null?'':t.toString()).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-let lastFactKey=null;
 function renderMemory(d){
   if(d.error) return `<div class="err">${esc(d.error)}</div>`;
-  const head = `<div style="display:flex;gap:18px;align-items:baseline;margin-bottom:8px">
+  const head = `<div style="display:flex;gap:16px;align-items:baseline;margin-bottom:8px">
     <div><span class="big">${d.total}</span><div class="sub">facts held</div></div>
-    <div><span class="big" style="font-size:22px">+${d.added_24h}</span><div class="sub">last 24h</div></div></div>`;
-  if(d.recent && d.recent[0]){ const k=d.recent[0].claim+d.recent[0].created_at;
-    if(lastFactKey && k!==lastFactKey) ripple(); lastFactKey=k; }
+    <div><span class="big" style="font-size:20px">+${d.added_24h}</span><div class="sub">last 24h</div></div></div>`;
   const rows = (d.recent||[]).map(f=>`<div class="row">
     <span class="tag ${f.kind==='persona'?'v':''}">${esc(f.kind)}</span> ${esc(f.claim)}
     <div class="meta">${esc(f.source||'')} · conf ${(f.confidence==null?'':f.confidence)} · ${timeAgo(f.created_at)} ago · ${esc(f.visibility||'')}</div></div>`).join('');
@@ -295,9 +557,9 @@ function renderEpisodes(d){
 function renderSessions(d){
   if(d.error) return `<div class="err">${esc(d.error)}</div>`;
   if(!d.length) return '<div class="empty">no coding sessions yet</div>';
-  return d.map(s=>`<div class="row"><b style="color:var(--moon)">${esc(s.title||(s.session_id||'session').slice(0,8))}</b>
+  return d.map(s=>`<div class="row"><b style="color:var(--fg)">${esc(s.title||(s.session_id||'session').slice(0,8))}</b>
     <span class="meta"> · ${timeAgo(s.ingested_at)} ago</span>
-    ${s.task_prompt?`<div class="meta">▸ ${esc(s.task_prompt)}</div>`:''}
+    ${s.task_prompt?`<div class="meta">&#9658; ${esc(s.task_prompt)}</div>`:''}
     ${s.result_summary?`<div>${esc(s.result_summary)}</div>`:''}</div>`).join('');
 }
 function renderSpend(d){
@@ -309,7 +571,7 @@ function renderSpend(d){
     <span>${new Date(w.day).toLocaleDateString(undefined,{weekday:'short'}).slice(0,2)}</span></div>`).join('');
   return `<div><span class="big">$${today.toFixed(2)}</span><div class="sub">spent today (cap $10)</div></div>
     <div class="bars">${bars||'<div class="empty">no spend logged</div>'}</div>
-    <div class="sub" style="margin-top:22px">7-day API spend</div>`;
+    <div class="sub" style="margin-top:20px">7-day API spend</div>`;
 }
 const CRON_LABEL = { 'dream-cycle':'04:00 nightly','morning-briefing':'08:00 daily','gap-analysis':'after dream',
   'cc-spend-sweep':'every 10m','cc-ingest-sweep':'every 15m' };
@@ -324,7 +586,7 @@ function renderScheduler(d){
     return `<div class="row" style="display:flex;align-items:center;gap:8px">
       <span style="flex:1">${esc(j.name)}<div class="meta">${CRON_LABEL[j.name]||esc(j.cron||'')}</div></span>
       <span class="state-badge s-${st}">${esc(st)}</span>
-      <span class="meta" style="width:64px;text-align:right">${when}</span></div>`;
+      <span class="meta" style="width:60px;text-align:right">${when}</span></div>`;
   }).join('');
 }
 
@@ -335,77 +597,95 @@ async function poll(def){
     e.body.innerHTML = def.render(d);
   } catch(err){ e.body.innerHTML = `<div class="err">offline — ${esc(err.message||err)}</div>`; }
 }
-function pollAll(){ WINDOWS.forEach(poll); setTimeout(updateCoreState, 200); }
-function updateCoreState(){
+function pollAll(){ WINDOWS.forEach(poll); setTimeout(updateBmoState, 200); }
+function updateBmoState(){
   const hr = new Date().getHours();
-  core.classList.toggle('dreaming', dreaming);
-  coreState.textContent = dreaming ? 'dreaming' : (hr>=0 && hr<6 ? 'resting' : 'awake');
-  coreState.style.color = dreaming ? 'var(--violet)' : 'var(--cyan)';
+  const currentMood = face.dataset.mood;
+  // only update ambient mood if not in an active chat state
+  if(currentMood !== 'thinking' && currentMood !== 'happy'){
+    if(dreaming){
+      setMood('dreaming');
+    } else if(hr >= 0 && hr < 6){
+      setMood('resting');
+    } else if(currentMood === 'dreaming' || currentMood === 'resting'){
+      setMood('awake');
+    }
+  }
 }
 
-// =================== background canvas ===================
-const bg = $('#bg'), bgx = bg.getContext('2d'), lk = $('#links'), lx = lk.getContext('2d');
-let stars=[], W2=0, H2=0, DPR=Math.min(devicePixelRatio||1, 2);
-function resizeCanvas(){
-  DPR = Math.min(devicePixelRatio||1, 2);
-  for(const c of [bg, lk]){ c.width=innerWidth*DPR; c.height=innerHeight*DPR; }
-  W2=innerWidth; H2=innerHeight;
-  bgx.setTransform(DPR,0,0,DPR,0,0); lx.setTransform(DPR,0,0,DPR,0,0);
-  stars = Array.from({length:Math.round(W2*H2/9000)}, ()=>({
-    x:Math.random()*W2, y:Math.random()*H2, z:Math.random()*0.8+0.2, tw:Math.random()*Math.PI*2 }));
+// ===================== CHAT CLIENT =====================
+const TOKEN_KEY = 'somnus.chatToken';
+const log = document.getElementById('chatlog');
+const form = document.getElementById('chatform');
+const input = document.getElementById('chatinput');
+const face = document.getElementById('bmo-face');
+
+function addMsg(who, text){
+  const d = document.createElement('div');
+  d.className = 'msg ' + who;            // who: 'you' | 'somnus' | 'sys'
+  d.textContent = text;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d;
 }
-function drawBg(t){
-  const g = bgx.createLinearGradient(0,0,W2,H2);
-  g.addColorStop(0,'#06050e'); g.addColorStop(0.6,'#0a081a'); g.addColorStop(1,'#0c0a1e');
-  bgx.fillStyle=g; bgx.fillRect(0,0,W2,H2);
-  const mx=W2*0.82, my=H2*0.2;
-  const mg=bgx.createRadialGradient(mx,my,0,mx,my,260);
-  mg.addColorStop(0,'rgba(150,160,230,0.16)'); mg.addColorStop(1,'transparent');
-  bgx.fillStyle=mg; bgx.beginPath(); bgx.arc(mx,my,260,0,7); bgx.fill();
-  for(const s of stars){
-    const a = 0.35 + Math.sin(t*0.001 + s.tw)*0.3;
-    bgx.globalAlpha = Math.max(0,a)*s.z; bgx.fillStyle = s.z>0.7?'#cfe0ff':'#9aa6e0';
-    bgx.fillRect(s.x, s.y, s.z*1.6, s.z*1.6);
-    s.y += s.z*0.06; if(s.y>H2){ s.y=0; s.x=Math.random()*W2; }
+function setMood(m){ face.dataset.mood = m; }
+
+async function loadHistory(){
+  try {
+    const r = await fetch('/api/chat/history', {cache:'no-store'});
+    const rows = await r.json();
+    for (const row of rows){
+      addMsg('you', row.prompt);
+      if (row.reply) addMsg(row.status === 'error' ? 'sys' : 'somnus', row.reply);
+    }
+  } catch {}
+}
+
+async function send(text){
+  addMsg('you', text); setMood('thinking');
+  const headers = {'content-type':'application/json'};
+  const tok = localStorage.getItem(TOKEN_KEY);
+  if (tok) headers['x-somnus-token'] = tok;
+  let res;
+  try { res = await fetch('/api/chat', {method:'POST', headers, body:JSON.stringify({text})}); }
+  catch(e){ setMood('awake'); return addMsg('sys', 'offline: '+e.message); }
+  if (res.status === 401){
+    setMood('awake');
+    const t = prompt('Somnus chat is locked. Enter the chat token:');
+    if (t){ localStorage.setItem(TOKEN_KEY, t); return send(text); }   // retry once
+    return addMsg('sys', 'locked — token required to send.');
   }
-  bgx.globalAlpha=1;
+  if (!res.ok){ setMood('awake'); return addMsg('sys', 'error: '+(await res.text())); }
+  const { id } = await res.json();
+  pollReply(id);
 }
-function quad(x0,y0,cx,cy,x1,y1,t){ const u=1-t;
-  return { x:u*u*x0+2*u*t*cx+t*t*x1, y:u*u*y0+2*u*t*cy+t*t*y1 }; }
-function drawLinks(t){
-  lx.clearRect(0,0,W2,H2);
-  const cx=W2/2, cy=H2/2;
-  for(const id in els){
-    const e = els[id]; if(e.win.classList.contains('dim')) continue;
-    const c = center(e);
-    const mx=(cx+c.x)/2, my=(cy+c.y)/2 - 40;
-    const isActive = activeLink===id && performance.now()<activeLinkUntil;
-    const isFocus = focusedId===id;
-    const base = isActive||isFocus ? 0.7 : 0.22;
-    lx.strokeStyle = e.def.accent; lx.globalAlpha = base; lx.lineWidth = isActive||isFocus?1.8:1;
-    lx.shadowColor=e.def.accent; lx.shadowBlur = isActive||isFocus?14:5;
-    lx.beginPath(); lx.moveTo(cx,cy); lx.quadraticCurveTo(mx,my,c.x,c.y); lx.stroke();
-    const speed = isActive||isFocus?0.0011:0.0005;
-    const p = ((t*speed)+ (id.length*0.13)) % 1;
-    const bz = quad(cx,cy,mx,my,c.x,c.y,p);
-    lx.shadowBlur=12; lx.globalAlpha=Math.min(1,base+0.4); lx.fillStyle=e.def.accent;
-    lx.beginPath(); lx.arc(bz.x,bz.y, isActive||isFocus?3:2, 0,7); lx.fill();
-  }
-  lx.globalAlpha=1; lx.shadowBlur=0;
+
+async function pollReply(id, tries=0){
+  if (tries > 60){ setMood('awake'); return addMsg('sys','(timed out waiting for Somnus)'); }
+  try {
+    const r = await fetch('/api/chat/'+id, {cache:'no-store'});
+    const d = await r.json();
+    if (d.status === 'done'){ setMood('happy'); addMsg('somnus', d.reply); setTimeout(()=>setMood('awake'),3000); return; }
+    if (d.status === 'error'){ setMood('awake'); addMsg('sys', d.reply || 'turn failed'); return; }
+  } catch {}
+  setTimeout(()=>pollReply(id, tries+1), 1500);   // pending/running
 }
-function frame(t){ drawBg(t); drawLinks(t); requestAnimationFrame(frame); }
+
+form.addEventListener('submit', e=>{
+  e.preventDefault();
+  const text = input.value.trim(); if(!text) return;
+  input.value=''; send(text);
+});
+loadHistory();
 
 // =================== boot ===================
 function boot(){
   const layout = loadLayout(), dflt = defaultLayout();
   WINDOWS.forEach(def => makeWindow(def, layout[def.id] || dflt[def.id]));
-  resizeCanvas();
-  requestAnimationFrame(frame); requestAnimationFrame(tickCore);
   pollAll(); setInterval(pollAll, 8000);
 }
 $('#reset').addEventListener('click', ()=>{ localStorage.removeItem('somnus.layout');
   const l=defaultLayout(); for(const id in els){ Object.assign(els[id], l[id]); place(els[id]); } releaseFocus(); });
-let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(resizeCanvas,150); });
+let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>{ const l=defaultLayout(); for(const id in els){ if(!els[id]._restore){ Object.assign(els[id], l[id]); place(els[id]); } } },200); });
 boot();
 </script>
 </body>
