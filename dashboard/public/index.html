@@ -299,6 +299,9 @@ body::after{
   opacity:1; top:0; left:0;
 }
 .win.dim{ opacity:0.3; filter:saturate(0.4); }
+/* BMO recedes when a window is focused */
+#bmo{ transition:opacity .35s ease, filter .35s ease; }
+#bmo.bg{ opacity:0.22; filter:saturate(0.4) blur(1px); pointer-events:none; }
 .win.focused{ box-shadow:4px 4px 0 var(--accent, var(--blue)); z-index:100; opacity:1; }
 
 .win .bar{
@@ -521,6 +524,7 @@ function raise(id){ els[id].win.style.zIndex = ++zTop; }
 function setFocus(id){
   focusedId = id;
   for(const k in els){ els[k].win.classList.toggle('dim', k!==id); els[k].win.classList.toggle('focused', k===id); }
+  bmo.classList.add('bg');
   const e = els[id];
   e._restore = {x:e.x,y:e.y,w:e.w,h:e.h};
   e.w = Math.min(innerWidth*0.6, 700); e.h = Math.min(innerHeight*0.70, 580);
@@ -536,6 +540,7 @@ function releaseFocus(){
     e.win.style.transition='transform .35s ease, width .35s, height .35s'; place(e);
     setTimeout(()=>{ if(e.win) e.win.style.transition=''; },380); }
   for(const k in els){ els[k].win.classList.remove('dim','focused'); }
+  bmo.classList.remove('bg');
   focusedId=null;
 }
 stage.addEventListener('pointerdown', ev=>{ if(ev.target===stage) releaseFocus(); });
