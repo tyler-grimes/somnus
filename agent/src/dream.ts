@@ -20,8 +20,8 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { logEpisode, pool, spentTodayUsd } from "./db.js";
 import { extractStructured } from "./llm.js";
+import { SKILLS_PENDING_DIR } from "./skills.js";
 
-const SKILLS_PENDING_DIR = path.resolve(import.meta.dirname, "../../.claude/skills-pending");
 const EPISODE_WINDOW = "36 hours"; // > daily cadence; dedupe makes re-runs safe
 
 const FACT_KINDS = ["event", "preference", "commitment", "belief", "fact", "habit", "persona"] as const;

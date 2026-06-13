@@ -10,10 +10,18 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { config } from "./config.js";
 
-const ROOT = path.resolve(import.meta.dirname, "../..");
-export const SKILLS_PENDING_DIR = path.join(ROOT, ".claude", "skills-pending");
-export const SKILLS_ACTIVE_DIR = path.join(ROOT, ".claude", "skills");
+/** Resolve the base dir holding skills/ + skills-pending/. Explicit SKILLS_DIR
+ *  wins (set on the container to the persistent, node-owned volume); otherwise
+ *  fall back to the repo-root .claude for local dev. Pure for testability. */
+export function skillsBase(skillsDir: string, repoRoot: string): string {
+  return skillsDir || path.join(repoRoot, ".claude");
+}
+
+const BASE = skillsBase(config.skillsDir, path.resolve(import.meta.dirname, "../.."));
+export const SKILLS_PENDING_DIR = path.join(BASE, "skills-pending");
+export const SKILLS_ACTIVE_DIR = path.join(BASE, "skills");
 
 export interface SkillMeta {
   slug: string;

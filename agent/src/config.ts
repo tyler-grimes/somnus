@@ -30,6 +30,11 @@ export const config = {
   timezone: process.env.TZ ?? "America/Denver",
   /** Scratch directory the agent may write to and run code in. */
   workspaceDir: process.env.WORKSPACE_DIR ?? "",
+  /** Base dir for learned skills (holds skills/ + skills-pending/). Defaults to
+   *  the repo-root .claude in dev. In the container set SKILLS_DIR to a path on
+   *  the persistent, node-owned volume (NOT $HOME/.claude/skills, which cc.sh's
+   *  Claude Code sessions would auto-load) so drafts survive image rebuilds. */
+  skillsDir: process.env.SKILLS_DIR ?? "",
   /**
    * Skip Telegram approval for Bash commands. Leave false on a host machine;
    * set true only when the agent runs inside a locked-down container.

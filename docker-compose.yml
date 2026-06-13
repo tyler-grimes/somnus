@@ -62,6 +62,11 @@ services:
       # In-network hostname; overrides the localhost URL in .env.
       DATABASE_URL: postgres://brain:${DB_PASSWORD}@db:5432/brain
       WORKSPACE_DIR: /app/workspace
+      # Learned skills live on the persistent, node-owned claude_state volume
+      # (subpath, NOT ~/.claude/skills — that dir is auto-loaded by cc.sh's own
+      # Claude Code sessions). /app/.claude is root-owned + ephemeral, so drafting
+      # there fails EACCES and would be lost on rebuild.
+      SKILLS_DIR: /home/node/.claude/somnus
       TZ: ${TZ:-America/Denver}
       WORKSTATION_SSH_HOST: ${WORKSTATION_SSH_HOST:-}
       WORKSTATION_SSH_USER: ${WORKSTATION_SSH_USER:-}
