@@ -640,7 +640,7 @@ async function loadHistory(){
   } catch {}
 }
 
-async function send(text){
+async function send(text, retried){
   addMsg('you', text); setMood('thinking');
   const headers = {'content-type':'application/json'};
   const tok = localStorage.getItem(TOKEN_KEY);
@@ -650,8 +650,9 @@ async function send(text){
   catch(e){ setMood('awake'); return addMsg('sys', 'offline: '+e.message); }
   if (res.status === 401){
     setMood('awake');
+    if (retried){ return addMsg('sys', 'wrong token — send again to retry.'); }
     const t = prompt('Somnus chat is locked. Enter the chat token:');
-    if (t){ localStorage.setItem(TOKEN_KEY, t); return send(text); }   // retry once
+    if (t){ localStorage.setItem(TOKEN_KEY, t); return send(text, true); }   // one retry
     return addMsg('sys', 'locked — token required to send.');
   }
   if (!res.ok){ setMood('awake'); return addMsg('sys', 'error: '+(await res.text())); }
