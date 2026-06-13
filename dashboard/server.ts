@@ -2,6 +2,7 @@ import express from 'express';
 import { Pool } from 'pg';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { buildGraph } from './graph.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -145,6 +146,18 @@ app.get('/api/scheduler', async (_req, res) => {
   } catch (err) {
     // pgboss schema may not exist yet if agent hasn't started
     res.json(QUEUES.map(name => ({ name, state: null, error: String(err) })));
+  }
+});
+
+app.get('/api/graph', async (_req, res) => {
+  try {
+    const [nodesQ, linksQ] = await Promise.all([
+      pool.query(`SELECT id, slug, type, title, emotional_weight FROM pages WHERE deleted_at IS NULL`),
+      pool.query(`SELECT from_page_id AS source, to_page_id AS target, link_type AS type FROM edges WHERE valid_until IS NULL`),
+    ]);
+    res.json(buildGraph(nodesQ.rows as any, linksQ.rows as any));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 
