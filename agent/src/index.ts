@@ -6,6 +6,7 @@ import { pool } from "./db.js";
 import { createBot } from "./telegram.js";
 import { initPolicy } from "./agent.js";
 import { startScheduler, triggerBriefingNow, triggerDreamNow, triggerGapAnalysisNow } from "./scheduler.js";
+import { startWebChatPoller } from "./webchat.js";
 
 /**
  * Claude Code strips credential env vars (CLAUDE_CODE_OAUTH_TOKEN,
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
   await initPolicy();
 
   const boss = await startScheduler();
+  startWebChatPoller();
   const bot = createBot({
     onDreamRequested: () => triggerDreamNow(boss),
     onBriefingRequested: () => triggerBriefingNow(boss),
