@@ -364,7 +364,7 @@ export function setChatModel(alias: string): string | null {
 
 export async function runAgentTurn(
   userText: string,
-  source: "telegram" | "cli",
+  source: "telegram" | "cli" | "web",
 ): Promise<string> {
   const spent = await spentTodayUsd();
   if (spent >= config.dailySpendLimitUsd) {
@@ -471,4 +471,20 @@ export async function runAgentTurn(
   }
 
   return resultText || "(empty response)";
+}
+
+/**
+ * Serialize every agent turn (Telegram + web) through one chain. runAgentTurn
+ * shares a single SDK session (lastSessionId); two concurrent turns would
+ * corrupt it. The chain never breaks on a failed turn (we swallow the error
+ * for the *chain*, while the caller still gets the original promise's result).
+ */
+let turnChain: Promise<unknown> = Promise.resolve();
+export function runTurnExclusive(
+  userText: string,
+  source: "telegram" | "cli" | "web",
+): Promise<string> {
+  const result = turnChain.then(() => runAgentTurn(userText, source));
+  turnChain = result.catch(() => {});
+  return result;
 }

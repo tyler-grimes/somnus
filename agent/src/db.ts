@@ -5,7 +5,7 @@ export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 5 }
 
 export async function logEpisode(e: {
   sessionId?: string;
-  source: "telegram" | "cli" | "voice" | "ingestion" | "dream_cycle";
+  source: "telegram" | "cli" | "web" | "voice" | "ingestion" | "dream_cycle";
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   costUsd?: number;
