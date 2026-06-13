@@ -25,6 +25,12 @@ async function claimOne(): Promise<{ id: string; prompt: string } | null> {
 export function startWebChatPoller(): void {
   if (running) return;
   running = true;
+  // Requeue rows orphaned at 'running' by a prior crash/restart (e.g. a turn
+  // in flight during a deploy) so the dashboard isn't left polling forever.
+  pool
+    .query(`UPDATE web_chat SET status='pending' WHERE status='running'`)
+    .then((r) => { if (r.rowCount) console.log(`[webchat] requeued ${r.rowCount} orphaned turn(s)`); })
+    .catch((err) => console.error("[webchat] requeue on boot failed:", err));
   const tick = async () => {
     let claimed: { id: string; prompt: string } | null = null;
     try {
