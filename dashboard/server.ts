@@ -105,8 +105,11 @@ app.get('/api/scheduler', async (_req, res) => {
     const [jobs, schedules] = await Promise.all([
       pool.query(`
         WITH ranked AS (
-          SELECT name, state, completedon, startedon, createdon,
-                 row_number() OVER (PARTITION BY name ORDER BY createdon DESC) AS rn
+          SELECT name, state,
+                 completed_on AS completedon,
+                 started_on   AS startedon,
+                 created_on   AS createdon,
+                 row_number() OVER (PARTITION BY name ORDER BY created_on DESC) AS rn
           FROM pgboss.job
           WHERE name = ANY($1)
         )
