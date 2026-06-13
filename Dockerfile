@@ -16,7 +16,7 @@ FROM node:22-slim
 # Minimal toolset for the agent's Bash tool. The container is the sandbox
 # boundary (BASH_AUTO_APPROVE=true); keep the surface small on purpose.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl ca-certificates procps \
+      git curl ca-certificates procps openssh-client \
     && rm -rf /var/lib/apt/lists/*
 # Claude Code CLI for cc.sh headless sessions (subscription-authed at runtime
 # via CLAUDE_CODE_OAUTH_TOKEN; no API key in session env). Pinned: cc.sh
