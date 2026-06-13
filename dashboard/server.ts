@@ -6,6 +6,8 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
+app.use(express.json({ limit: '64kb' }));
+const CHAT_TOKEN = process.env.CHAT_TOKEN ?? '';
 const PORT = 3001;
 const TZ = process.env.TZ ?? 'America/Denver';
 const QUEUES = ['dream-cycle', 'gap-analysis', 'morning-briefing', 'cc-spend-sweep', 'cc-ingest-sweep'];
@@ -144,6 +146,38 @@ app.get('/api/scheduler', async (_req, res) => {
     // pgboss schema may not exist yet if agent hasn't started
     res.json(QUEUES.map(name => ({ name, state: null, error: String(err) })));
   }
+});
+
+app.post('/api/chat', async (req, res) => {
+  if (CHAT_TOKEN && req.get('x-somnus-token') !== CHAT_TOKEN) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  const text = (req.body?.text ?? '').toString().trim();
+  if (!text) return res.status(400).json({ error: 'empty message' });
+  if (text.length > 4000) return res.status(400).json({ error: 'message too long' });
+  try {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO web_chat (prompt) VALUES ($1) RETURNING id`, [text]);
+    res.json({ id: rows[0].id });
+  } catch (err) { res.status(500).json({ error: String(err) }); }
+});
+
+app.get('/api/chat/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT status, reply FROM web_chat WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ error: String(err) }); }
+});
+
+app.get('/api/chat/history', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT prompt, reply, status, created_at FROM web_chat
+       ORDER BY created_at DESC LIMIT 20`);
+    res.json(rows.reverse());
+  } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
