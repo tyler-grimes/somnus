@@ -78,7 +78,9 @@ export async function startScheduler(): Promise<PgBoss> {
   await boss.createQueue(GAP_ANALYSIS_QUEUE);
   // No standalone schedule: chained off dream completion (see DREAM_QUEUE
   // handler) so it researches freshly consolidated memory. Manual /gaps
-  // still enqueues directly via triggerGapAnalysisNow.
+  // still enqueues directly via triggerGapAnalysisNow. Clear any stale cron
+  // left by an older version that scheduled this at 03:00 (self-healing).
+  await boss.unschedule(GAP_ANALYSIS_QUEUE).catch(() => {});
   await boss.work(GAP_ANALYSIS_QUEUE, async () => {
     console.log("[gap-analysis] starting");
     try {
