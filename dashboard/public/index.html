@@ -41,7 +41,16 @@ body::after{
   width:220px;
   display:flex; flex-direction:column; align-items:center;
   gap:0;
+  cursor:grab; touch-action:none;
 }
+#bmo.dragging{ cursor:grabbing; }
+/* legs flail while BMO is being dragged */
+#bmo.dragging .leg{ transform-origin:top center; animation:legwave .35s ease-in-out infinite; }
+#bmo.dragging .leg:nth-child(2){ animation-delay:.17s; }
+#bmo.dragging .arm{ transform-origin:top center; animation:armwave .4s ease-in-out infinite; }
+#bmo.dragging .arm:nth-child(2){ animation-delay:.2s; }
+@keyframes legwave{ 0%,100%{ transform:rotate(-22deg); } 50%{ transform:rotate(22deg); } }
+@keyframes armwave{ 0%,100%{ transform:rotate(14deg); } 50%{ transform:rotate(-14deg); } }
 
 /* body */
 #bmo .bmo-body{
@@ -678,14 +687,41 @@ form.addEventListener('submit', e=>{
 });
 loadHistory();
 
+// =================== BMO drag (legs flail while moving) ===================
+const bmo = document.getElementById('bmo');
+function bmoPlace(x, y){ bmo.style.left = x+'px'; bmo.style.top = y+'px'; bmo.style.transform = 'none'; }
+function bmoSave(x, y){ localStorage.setItem('somnus.bmo', JSON.stringify({x, y})); }
+function bmoRestore(){
+  try { const p = JSON.parse(localStorage.getItem('somnus.bmo')||'null'); if(p) bmoPlace(p.x, p.y); } catch{}
+}
+function bmoRecenter(){ localStorage.removeItem('somnus.bmo');
+  bmo.style.left='50%'; bmo.style.top='50%'; bmo.style.transform='translate(-50%,-50%)'; }
+bmo.addEventListener('pointerdown', ev=>{
+  if(ev.target.closest('.bmo-screen')) return;          // let the chat screen work
+  ev.preventDefault(); bmo.setPointerCapture(ev.pointerId);
+  const r = bmo.getBoundingClientRect();                 // switch from centered-transform to px
+  let x = r.left, y = r.top; bmoPlace(x, y);
+  const sx = ev.clientX, sy = ev.clientY, ox = x, oy = y;
+  bmo.classList.add('dragging');
+  const move = m=>{
+    x = Math.max(-40, Math.min(innerWidth - r.width + 40, ox + (m.clientX-sx)));
+    y = Math.max(0,   Math.min(innerHeight - 60,           oy + (m.clientY-sy)));
+    bmoPlace(x, y);
+  };
+  const up = ()=>{ bmo.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
+    bmo.classList.remove('dragging'); bmoSave(x, y); };
+  bmo.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+});
+
 // =================== boot ===================
 function boot(){
   const layout = loadLayout(), dflt = defaultLayout();
   WINDOWS.forEach(def => makeWindow(def, layout[def.id] || dflt[def.id]));
+  bmoRestore();
   pollAll(); setInterval(pollAll, 8000);
 }
 $('#reset').addEventListener('click', ()=>{ localStorage.removeItem('somnus.layout');
-  const l=defaultLayout(); for(const id in els){ Object.assign(els[id], l[id]); place(els[id]); } releaseFocus(); });
+  const l=defaultLayout(); for(const id in els){ Object.assign(els[id], l[id]); place(els[id]); } releaseFocus(); bmoRecenter(); });
 let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>{ const l=defaultLayout(); for(const id in els){ if(!els[id]._restore){ Object.assign(els[id], l[id]); place(els[id]); } } },200); });
 boot();
 </script>
