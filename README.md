@@ -46,8 +46,9 @@ feature branch, and hands you a compare URL to merge. Billed to a Claude
 subscription, not the API.
 
 ⌨️ **Reaches your desk** — over a locked-down SSH bridge it can drive the live
-tmux sessions on your Mac (`term.sh`): read a pane, answer a Claude Code
-session's prompt, send control keys. Every keystroke is one Telegram approval.
+tmux sessions on your computer (`term.sh`, any sshd+tmux host — macOS, Linux,
+WSL): read a pane, answer a Claude Code session's prompt, send control keys.
+Every keystroke is one Telegram approval.
 
 📊 **Shows itself** — a small web dashboard (tailnet-only) over the brain.
 
@@ -62,7 +63,7 @@ external agent gateway, no cloud memory service.
    Telegram  ──long-poll──►  ┌────────────────────────────┐
    (you, allowlisted)        │  agent  (Claude Agent SDK)  │
                              │  • turn loop + core blocks  │
-   Mac tmux  ◄──term.sh────► │  • layered permission gate  │      ┌──────────────┐
+  your tmux  ◄──term.sh────► │  • layered permission gate  │      ┌──────────────┐
    (SSH bridge, gated)       │  • dream / brief / gaps     │◄────►│  brain (MCP) │
                              │  • cc.sh coding sessions    │ stdio│  6 tools     │
    GitHub    ◄──cc.sh──────► │  • pg-boss scheduler        │      └──────┬───────┘
@@ -108,7 +109,7 @@ Security is a first-class requirement, not a feature.
 - **Layered permission gate:** brain tools always allowed; Read/Glob/Grep except
   sensitive paths; Write/Edit workspace-only; secrets handed to bridges via
   0600 files the agent can't read.
-- **The Mac bridge can only run `term.sh`** — an SSH forced-command pins it,
+- **The workstation bridge can only run `term.sh`** — an SSH forced-command pins it,
   scoped to the VM's tailnet IP, instantly revocable.
 - HMAC-signed approval tokens · daily spend cap · ingested content spotlighted
   as untrusted · append-only episode audit log · nightly DB backups pulled
@@ -128,7 +129,7 @@ Somnus self-audited its own codebase (`research/somnus-security-research-*.md`)
 | Dream cycle → persona evolution → friction clustering → skill drafting | ✅ live |
 | Gap analysis (chained off the dream cycle) + morning briefing | ✅ live |
 | In-container Claude Code coding sessions (`cc.sh`, subscription-billed) | ✅ live |
-| Mac tmux control bridge (`term.sh` over Tailscale, forced-command) | ✅ live |
+| Workstation tmux control bridge (`term.sh` over Tailscale, forced-command) | ✅ live |
 | Web dashboard (tailnet) · CC transcript ingestion · auto-migrations | ✅ live |
 | 24/7 VM deployment (Hetzner, Docker, nightly backups) | ✅ live |
 | Voice round-trip (Telegram voice → STT → agent → TTS) | ⏸ planned |

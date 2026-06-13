@@ -217,12 +217,14 @@ Verification:
   earlier session — the claude_state volume should keep it. (If resume fails,
   check `docker volume ls | grep claude_state`.)
 
-## 9. Term bridge — control the Mac's tmux from Somnus
+## 9. Term bridge — control your workstation's tmux from Somnus
 
-Somnus can drive the Mac's tmux Claude Code sessions via `/app/agent/tools/term.sh`
-(every call Telegram-gated). One-time setup:
+Somnus can drive the tmux Claude Code sessions on your personal computer via
+`/app/agent/tools/term.sh` (every call Telegram-gated). Works on any host with
+sshd + tmux — macOS, Linux, or WSL. Commands below show macOS; per-OS notes
+inline. One-time setup (run from your workstation's repo clone):
 
-1. **Generate the keypair** (run from the Mac repo):
+1. **Generate the keypair:**
    ```bash
    ssh-keygen -t ed25519 -f /tmp/somnus-term-bridge -N "" -C "somnus-term-bridge"
    ```
@@ -231,25 +233,27 @@ Somnus can drive the Mac's tmux Claude Code sessions via `/app/agent/tools/term.
    scp /tmp/somnus-term-bridge somnus-vm:/home/somnus/.ssh/term-bridge
    ssh somnus-vm 'chmod 600 /home/somnus/.ssh/term-bridge'
    ```
-3. **Authorize the public key on the Mac** — append ONE line to
-   `~/.ssh/authorized_keys` (replace `<PUBKEY>` with the contents of
+3. **Authorize the public key on your workstation** — append ONE line to
+   `~/.ssh/authorized_keys` (replace `<TERM_BRIDGE_PATH>` with the absolute path
+   to `tools/term-bridge.sh` in your clone, and `<PUBKEY>` with the contents of
    `/tmp/somnus-term-bridge.pub`):
    ```
-   command="/Users/tylergrimes/adhd_squared/tools/term-bridge.sh",from="100.96.104.68",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty <PUBKEY>
+   command="<TERM_BRIDGE_PATH>",from="100.96.104.68",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty <PUBKEY>
    ```
-4. **Enable Remote Login on the Mac:** `sudo systemsetup -setremotelogin on`
-   (or System Settings → General → Sharing → Remote Login).
-5. **Delete the temp keypair from the Mac:** `rm /tmp/somnus-term-bridge*`
-6. **Add Mac coordinates to the VM `.env`** (compose has defaults, but make them
-   explicit):
+4. **Enable SSH on your workstation:**
+   - macOS: System Settings → General → Sharing → Remote Login → on (the GUI
+     toggle avoids the Full Disk Access requirement of `systemsetup`).
+   - Linux/WSL: `sudo systemctl enable --now ssh` (or `sshd`).
+5. **Delete the temp keypair:** `rm /tmp/somnus-term-bridge*`
+6. **Add your workstation's coordinates to the VM `.env`:**
    ```
-   MAC_SSH_HOST=100.83.186.28
-   MAC_SSH_USER=tylergrimes
+   WORKSTATION_SSH_HOST=<your-tailnet-ip>
+   WORKSTATION_SSH_USER=<your-username>
    ```
 7. **Roll the image:** `tools/deploy.sh`
 
 Verify: ask Somnus (Telegram) to run `term.sh list` — expect an approval prompt,
-then your Mac's panes. From the VM, `ssh -i /home/somnus/.ssh/term-bridge
-tylergrimes@100.83.186.28 "whoami"` must be REFUSED by the forced command.
+then your workstation's panes. From the VM, `ssh -i /home/somnus/.ssh/term-bridge
+<user>@<tailnet-ip> "whoami"` must be REFUSED by the forced command.
 
-Revoke anytime: delete the `authorized_keys` line on the Mac.
+Revoke anytime: delete the `authorized_keys` line on your workstation.
