@@ -728,7 +728,19 @@ function boot(){
 }
 $('#reset').addEventListener('click', ()=>{ localStorage.removeItem('somnus.layout');
   const l=defaultLayout(); for(const id in els){ Object.assign(els[id], l[id]); place(els[id]); } releaseFocus(); bmoRecenter(); });
-let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>{ const l=defaultLayout(); for(const id in els){ if(!els[id]._restore){ Object.assign(els[id], l[id]); place(els[id]); } } },200); });
+// On browser resize, keep each window's size + position — only clamp any
+// window that would fall off the new viewport back into view. Never reset to
+// the default layout (that was clobbering dragged/resized windows).
+let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>{
+  for(const id in els){ const e=els[id]; if(e._restore) continue;
+    e.w = Math.min(e.w, innerWidth-24);
+    e.h = Math.min(e.h, innerHeight-24);
+    e.x = Math.max(0, Math.min(e.x, innerWidth - e.w));
+    e.y = Math.max(0, Math.min(e.y, innerHeight - e.h));
+    place(e);
+  }
+  saveLayout();
+},200); });
 boot();
 </script>
 </body>
