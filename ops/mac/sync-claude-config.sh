@@ -22,10 +22,25 @@ done
 
 # Per-item copy into a flat staging dir (macOS openrsync mishandles
 # --relative's /./ anchor, so no fancy path surgery here).
-# --copy-unsafe-links: symlinks escaping the tree (e.g. skills/find-skills →
-# ~/.agents/...) become real files; docker cp refuses escaping symlinks.
+# Known escaping symlinks (e.g. skills/find-skills → ~/.agents/...) are
+# dereferenced explicitly below; --safe-links rejects any unexpected ones.
 ssh "$VM_HOST" "mkdir -p $STAGE"
-rsync -a --delete --copy-unsafe-links "${args[@]}" "$VM_HOST:$STAGE/"
+
+# Copy any known escaping symlinks explicitly as real files before rsync,
+# so --safe-links can reject unexpected escaping symlinks loudly.
+# The skills/find-skills symlink points outside the tree (e.g. ~/.agents/...);
+# copy it as a real file into a temp dir that rsync will treat as in-tree.
+FIND_SKILLS_LINK="$SRC/skills/find-skills"
+if [ -L "$FIND_SKILLS_LINK" ]; then
+  SKILLS_STAGE=$(mktemp -d)
+  trap 'rm -rf "$SKILLS_STAGE"' EXIT
+  cp -RL "$FIND_SKILLS_LINK" "$SKILLS_STAGE/find-skills"
+  # Replace the escaping symlink with the dereferenced copy for this rsync run.
+  rsync -a --delete --safe-links "${args[@]}" "$VM_HOST:$STAGE/"
+  rsync -a "$SKILLS_STAGE/find-skills" "$VM_HOST:$STAGE/skills/"
+else
+  rsync -a --delete --safe-links "${args[@]}" "$VM_HOST:$STAGE/"
+fi
 
 ssh "$VM_HOST" '
   set -euo pipefail

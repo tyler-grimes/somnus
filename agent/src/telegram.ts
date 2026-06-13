@@ -136,8 +136,17 @@ export function createBot(
 
   // /brief — send the morning briefing now
   bot.command("brief", async (ctx) => {
-    if (!opts.onBriefingRequested) return ctx.reply("Briefing not wired up.");
-    await opts.onBriefingRequested();
+    if (!opts.onBriefingRequested) {
+      await ctx.reply("Briefing not wired up in this process.");
+      return;
+    }
+    await ctx.reply("Queuing your briefing…");
+    try {
+      await opts.onBriefingRequested();
+    } catch (err) {
+      console.error("[telegram] brief trigger failed:", err);
+      await ctx.reply("Briefing trigger failed — check the console.").catch(() => {});
+    }
   });
 
   // /gaps — manually trigger proactive gap analysis

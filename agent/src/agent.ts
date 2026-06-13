@@ -27,6 +27,7 @@ import { logEpisode, logSpend, pool, spentTodayUsd } from "./db.js";
 import { requestApproval } from "./approvals.js";
 import { skillsPromptSection } from "./skills.js";
 import { envScrubbedBash, sandboxSettings, scrubbedSubprocessEnv } from "./sandbox.js";
+import { SAFE_BASH_RE, NETWORK_BASH_RE } from "./bash-policy.js";
 
 const BRAIN_MCP_PATH = path.resolve(
   import.meta.dirname,
@@ -41,7 +42,7 @@ fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
  *  boundary — the OS sandbox in sandbox.ts is what actually stops reads of
  *  these paths from Bash. This regex still covers Read/Glob/Grep. */
 const SENSITIVE_PATH_RE =
-  /\.env|\/secrets\/|\.ssh\/|\.aws\/|\.gnupg\/|\.netrc|credentials|id_rsa|id_ed25519|\.pem\b|\.claude\.json/i;
+  /\.env|\/secrets\/|\.ssh\/|\.aws\/|\.gnupg\/|\.netrc|credentials|id_rsa|id_ed25519|\.pem\b|\.claude\.json|\/proc\/|\.docker\/|\.config\/gh\/|\.npmrc|\.pypirc|\.claude\/|\.config\/gcloud\//i;
 
 /** Host tools that cannot run inside the sandbox: term.sh/tmux need the tmux
  *  server socket, cc.sh needs the claude CLI's real HOME. The trade: they are
@@ -49,12 +50,7 @@ const SENSITIVE_PATH_RE =
  *  them (term.sh list / tmux list-* stay safe-listed; read-only inventory). */
 const HOST_TOOL_RE = /(^|[\s/;&|])(term\.sh|cc\.sh|tmux)(\s|$)/;
 
-/** Commands that can move data off the machine. Automode never auto-approves
- *  these — exfiltration keeps a one-tap human confirm even when everything
- *  else is auto (sandbox blocks secret reads, but workspace contents are
- *  fair game to a poisoned instruction). */
-const NETWORK_BASH_RE =
-  /\b(curl|wget|nc|ncat|netcat|telnet|ssh|scp|sftp|rsync|ftp)\b|\bgit\s+(push|pull|fetch|clone)\b|\bnpm\s+(publish|install|ci|i)\b|\bpip3?\s+install\b|\bbrew\s+(install|upgrade)\b|\bopenssl\s+s_client\b/i;
+// NETWORK_BASH_RE and SAFE_BASH_RE are imported from ./bash-policy.js above.
 
 const READONLY_TOOLS = new Set(["Read", "Glob", "Grep", "TodoWrite", "BashOutput"]);
 const WORKSPACE_WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
@@ -120,7 +116,7 @@ async function decidePermission(
       // Layer 3: standing rules from the "Always" button — prefix match, so a
       // rule made on `node /x/script.js` also covers `node /x/script.js --flag`
       const rule = await pool.query(
-        `SELECT 1 FROM command_rules WHERE $1 LIKE pattern || '%' LIMIT 1`,
+        `SELECT 1 FROM command_rules WHERE starts_with($1, pattern) LIMIT 1`,
         [command],
       );
       if (rule.rowCount) return allowBash();
@@ -166,13 +162,6 @@ async function decidePermission(
 
   return deny(`Tool ${toolName} is not enabled in this harness.`);
 }
-
-/** Read-only commands with no shell metacharacters: auto-allowed.
- *  tmux list-panes is included (pane inventory is harmless); peek/send are
- *  not — terminal contents can show secrets and send-keys types on the owner's
- *  keyboard, so both stay behind approval. */
-const SAFE_BASH_RE =
-  /^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree|node --version|npm --version|tmux list-(panes|sessions|windows)\b[^|;&><`$\\]*|\S*\/term\.sh list)$|^(ls|pwd|cat|head|tail|wc|grep|rg|date|whoami|which|file|stat|du|df|tree)\b[^|;&><`$\\]*$/;
 
 /** Automode: every gated tool auto-approved until this timestamp.
  *  "on" = AUTO_ON_CAP_MIN minutes — no longer indefinite; an unattended

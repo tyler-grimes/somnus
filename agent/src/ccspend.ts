@@ -5,6 +5,7 @@
  * Subscription-billed sessions report ~$0 — these rows are observability
  * (sessions/day, repos touched) more than budget.
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -51,11 +52,27 @@ export async function sweepCcSpend(spoolPath?: string): Promise<number> {
   let ingested = 0;
 
   const ingestFile = async (file: string): Promise<void> => {
-    const entries = parseSpoolLines(fs.readFileSync(file, "utf8"));
+    const raw = fs.readFileSync(file, "utf8");
+    const rawLines = raw.split("\n");
+    // Build (entry, rawLine) pairs so we can hash the original line string
+    const pairs: Array<{ entry: SpoolEntry; rawLine: string }> = [];
+    for (const line of rawLines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const [entry] = parseSpoolLines(trimmed);
+      if (entry) pairs.push({ entry, rawLine: trimmed });
+    }
+    const entries = pairs.map((p) => p.entry);
     let ok = 0;
-    for (const e of entries) {
+    for (const { entry: e, rawLine } of pairs) {
+      // Compute a deterministic UUID-shaped id from the raw line so that
+      // re-ingesting the same line (crash recovery) is a no-op (db does
+      // ON CONFLICT (id) DO NOTHING).
+      const h = createHash("sha256").update(rawLine).digest("hex");
+      const id = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
       try {
         await logSpend({
+          id,
           model: "claude-code-session",
           purpose: `cc:${e.dir}${e.session_id ? ` ${e.session_id}` : ""}`,
           inputTokens: 0,

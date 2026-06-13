@@ -2,6 +2,7 @@ import pg from "pg";
 import { config } from "./config.js";
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 5 });
+pool.on('error', (err) => { console.error('[db] idle client error:', err); });
 
 export async function logEpisode(e: {
   sessionId?: string;
@@ -28,6 +29,7 @@ export async function logEpisode(e: {
 }
 
 export async function logSpend(s: {
+  id?: string;
   model: string;
   purpose: string;
   inputTokens: number;
@@ -35,11 +37,20 @@ export async function logSpend(s: {
   costUsd: number;
   createdAt?: string;
 }): Promise<void> {
-  await pool.query(
-    `INSERT INTO spend_log (model, purpose, input_tokens, output_tokens, cost_usd, created_at)
-     VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))`,
-    [s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
-  );
+  if (s.id !== undefined) {
+    await pool.query(
+      `INSERT INTO spend_log (id, model, purpose, input_tokens, output_tokens, cost_usd, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()))
+       ON CONFLICT (id) DO NOTHING`,
+      [s.id, s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO spend_log (model, purpose, input_tokens, output_tokens, cost_usd, created_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))`,
+      [s.model, s.purpose, s.inputTokens, s.outputTokens, s.costUsd, s.createdAt ?? null],
+    );
+  }
 }
 
 export async function logFriction(f: {
@@ -55,12 +66,13 @@ export async function logFriction(f: {
   );
 }
 
-/** Budget gate: total spend since local midnight. */
+/** Budget gate: total spend since local midnight (timezone-aware). */
 export async function spentTodayUsd(): Promise<number> {
   const res = await pool.query(
     `SELECT COALESCE(SUM(cost_usd), 0) AS total
        FROM spend_log
-      WHERE created_at >= date_trunc('day', now())`,
+      WHERE created_at >= date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1`,
+    [config.timezone],
   );
   return Number(res.rows[0].total);
 }

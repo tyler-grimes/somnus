@@ -37,7 +37,15 @@ export function startWebChatPoller(): void {
       claimed = await claimOne();
       if (claimed) {
         try {
-          const reply = await runTurnExclusive(claimed.prompt, "web");
+          const reply = await Promise.race([
+            runTurnExclusive(claimed.prompt, "web"),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("web turn timeout")),
+                10 * 60 * 1000,
+              ),
+            ),
+          ]);
           await pool.query(
             `UPDATE web_chat SET reply=$2, status='done', answered_at=now() WHERE id=$1`,
             [claimed.id, reply],

@@ -837,6 +837,7 @@ function updateBmoState(){
 
 // ===================== CHAT CLIENT =====================
 const TOKEN_KEY = 'somnus.chatToken';
+let currentPollId = null;   // tracks the latest in-flight pollReply; older polls bail early
 const log = document.getElementById('chatlog');
 const form = document.getElementById('chatform');
 const input = document.getElementById('chatinput');
@@ -879,10 +880,12 @@ async function send(text, retried){
   }
   if (!res.ok){ setMood('awake'); return addMsg('sys', 'error: '+(await res.text())); }
   const { id } = await res.json();
+  currentPollId = id;
   pollReply(id);
 }
 
 async function pollReply(id, tries=0){
+  if (id !== currentPollId) return;   // a newer send() has taken over; abandon this loop
   if (tries > 60){ setMood('awake'); return addMsg('sys','(timed out waiting for Somnus)'); }
   try {
     const r = await fetch('/api/chat/'+id, {cache:'no-store'});

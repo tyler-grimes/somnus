@@ -49,7 +49,8 @@ CREATE TABLE content_chunks (
   page_id         UUID NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
   chunk_index     INTEGER NOT NULL,
   chunk_text      TEXT NOT NULL,
-  -- Dimension fixed at init; 1536 = text-embedding-3-large.
+  -- Dimension fixed at init; 1536 = text-embedding-3-small (native 1536d).
+  -- text-embedding-3-large is 3072d natively — pass dimensions=1536 if switching.
   -- halfvec: 2*d+8 bytes ~= 3.1KB/chunk at 1536d.
   embedding       HALFVEC(1536),
   fts_vector      TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', chunk_text)) STORED,

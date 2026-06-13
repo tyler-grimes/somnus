@@ -177,14 +177,24 @@ server.tool(
     valid_from: z.string().date().optional(),
   },
   async ({ old_fact_id, kind, new_claim, valid_from }) => {
+    // #18: compute embedding before acquiring a connection so the slow HTTPS
+    // call does not hold an idle pool client (matches remember_fact pattern).
+    const emb = await embedText(new_claim);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const emb = await embedText(new_claim);
+      // #17: read the original fact's visibility so the replacement inherits it
+      // rather than silently defaulting to 'private'.
+      const orig = await client.query(
+        `SELECT visibility FROM facts WHERE id = $1`,
+        [old_fact_id],
+      );
+      if (orig.rowCount === 0) throw new Error("old fact not found or already superseded");
+      const visibility = orig.rows[0].visibility ?? "private";
       const ins = await client.query(
-        `INSERT INTO facts (kind, claim, valid_from, source, embedding)
-         VALUES ($1, $2, $3, 'mcp:supersede_fact', $4::halfvec) RETURNING id`,
-        [kind, new_claim, valid_from ?? null, emb],
+        `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
+         VALUES ($1, $2, $3, 'mcp:supersede_fact', $4::halfvec, $5) RETURNING id`,
+        [kind, new_claim, valid_from ?? null, emb, visibility],
       );
       const upd = await client.query(
         `UPDATE facts

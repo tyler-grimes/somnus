@@ -250,18 +250,40 @@ async function evolvePersona(): Promise<string> {
     schema,
   });
 
+  // #16 data-integrity: wrap INSERT+UPDATE in a transaction; validate old_id
+  // against the persona rows we already loaded before attempting the supersede.
+  const currentIds = new Set(current.rows.map((r: { id: string }) => r.id));
   let changes = 0;
   for (const rev of out.revisions.slice(0, 1)) {
-    const ins = await pool.query(
-      `INSERT INTO facts (kind, claim, notability, source) VALUES ('persona', $1, 0.9, 'dream:persona') RETURNING id`,
-      [rev.new_claim],
-    );
-    const upd = await pool.query(
-      `UPDATE facts SET superseded_at = now(), superseded_by = $2
-        WHERE id = $1 AND kind = 'persona' AND superseded_at IS NULL`,
-      [rev.old_id, ins.rows[0].id],
-    );
-    if (upd.rowCount) changes++;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const ins = await client.query(
+        `INSERT INTO facts (kind, claim, notability, source) VALUES ('persona', $1, 0.9, 'dream:persona') RETURNING id`,
+        [rev.new_claim],
+      );
+      const newId = ins.rows[0].id as string;
+      // Only supersede the old fact if it was among the currently-active rows we
+      // loaded; an LLM-hallucinated id must never silently corrupt other rows.
+      if (currentIds.has(rev.old_id)) {
+        const upd = await client.query(
+          `UPDATE facts SET superseded_at = now(), superseded_by = $2
+            WHERE id = $1 AND kind = 'persona' AND superseded_at IS NULL`,
+          [rev.old_id, newId],
+        );
+        if (upd.rowCount) changes++;
+      } else {
+        // New fact still lands; old_id was bogus so we skip the supersede.
+        console.warn(`[dream:persona] old_id ${rev.old_id} not found in active persona rows — supersede skipped`);
+        changes++; // new fact inserted is still meaningful progress
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   }
   for (const claim of out.additions.slice(0, 1)) {
     await pool.query(
@@ -292,7 +314,8 @@ async function clusterFriction(): Promise<string> {
        JOIN friction_events b ON a.id < b.id
         AND a.friction_type = b.friction_type
         AND similarity(a.description, b.description) > 0.45
-      WHERE a.resolved_at IS NULL AND b.resolved_at IS NULL`,
+      WHERE a.resolved_at IS NULL AND b.resolved_at IS NULL
+      LIMIT 1000`,
   );
   if (links.rowCount === 0) return "cluster: nothing to cluster";
 
@@ -363,6 +386,12 @@ async function draftSkills(): Promise<string> {
       maxTokens: 4000,
       schema,
     });
+
+    // #6 security: reject slugs that could escape SKILLS_PENDING_DIR via path traversal
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(out.slug)) {
+      console.warn(`[dream:skills] unsafe slug from LLM, skipping cluster: ${JSON.stringify(out.slug)}`);
+      continue;
+    }
 
     const dir = path.join(SKILLS_PENDING_DIR, out.slug);
     fs.mkdirSync(dir, { recursive: true });
@@ -440,6 +469,13 @@ export async function runDreamCycle(): Promise<string> {
 
   const lines: string[] = [];
   for (const [name, phase] of phases) {
+    // #13 concurrency: re-check budget before each phase so a long run can't
+    // overshoot the daily limit if earlier phases consumed significant spend.
+    const midSpent = await spentTodayUsd();
+    if (midSpent >= config.dailySpendLimitUsd) {
+      lines.push(`budget exhausted mid-cycle ($${midSpent.toFixed(2)}), remaining phases skipped`);
+      break;
+    }
     try {
       lines.push(await phase());
     } catch (err) {

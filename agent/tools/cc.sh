@@ -79,6 +79,7 @@ cmd=${1:?usage: cc.sh clone|run|resume|list|push}
 case "$cmd" in
   clone)
     spec=${2:?owner/repo}
+    [[ "$spec" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'invalid owner/repo spec' >&2; exit 1; }
     owner=${spec%%/*}
     name=${spec##*/}
     _tok="$(token_for_owner "$owner")"

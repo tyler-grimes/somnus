@@ -225,9 +225,11 @@ app.get('/api/chat/history', async (_req, res) => {
 });
 
 app.get('/api/chat/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!PAGE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid id' });
   try {
     const { rows } = await pool.query(
-      `SELECT status, reply FROM web_chat WHERE id = $1`, [req.params.id]);
+      `SELECT status, reply FROM web_chat WHERE id = $1`, [id]);
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     res.json(rows[0]);
   } catch (err) { res.status(500).json({ error: String(err) }); }

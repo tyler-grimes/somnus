@@ -10,11 +10,16 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/somnus}"
 
 mkdir -p "$BACKUP_DIR"
 stamp=$(date +%F)
-docker compose --project-directory "$REPO_DIR" exec -T db \
-  pg_dump -Fc -U brain brain > "$BACKUP_DIR/brain-$stamp.dump"
 
-# Prune to the 7 newest dumps.
-ls -1t "$BACKUP_DIR"/brain-*.dump | tail -n +8 | while read -r f; do
+# Clean up any leftover partials from a previous failed run.
+trap 'rm -f "$BACKUP_DIR"/*.dump.partial 2>/dev/null' EXIT
+
+docker compose --project-directory "$REPO_DIR" exec -T db \
+  pg_dump -Fc -U brain brain > "$BACKUP_DIR/brain-$stamp.dump.partial" \
+  && mv "$BACKUP_DIR/brain-$stamp.dump.partial" "$BACKUP_DIR/brain-$stamp.dump"
+
+# Prune to the 7 newest dumps (sort by filename/date, not mtime).
+ls -1 "$BACKUP_DIR"/brain-*.dump 2>/dev/null | sort -r | tail -n +8 | while read -r f; do
   rm -f "$f"
 done
 

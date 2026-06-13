@@ -12,12 +12,14 @@
 --     -f /docker-entrypoint-initdb.d/002_visibility.sql
 -- ============================================================
 
-CREATE VIEW facts_world AS
+-- CREATE OR REPLACE so re-applying this file (e.g. migrate.sh recovering from a
+-- partially-tracked baseline) is idempotent and never errors on "already exists".
+CREATE OR REPLACE VIEW facts_world AS
   SELECT id, kind, claim, valid_from, valid_until, confidence
   FROM facts
   WHERE visibility = 'world' AND superseded_at IS NULL;
 
-CREATE VIEW facts_shared AS
+CREATE OR REPLACE VIEW facts_shared AS
   SELECT id, kind, claim, valid_from, valid_until, confidence
   FROM facts
   WHERE visibility IN ('shared', 'world') AND superseded_at IS NULL;

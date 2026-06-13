@@ -102,8 +102,14 @@ export async function ingestNewSessions(): Promise<number> {
   const newPaths = findNewSessions(knownIds);
   if (newPaths.length === 0) return 0;
 
+  const cutoff = Date.now() - 30 * 60 * 1000;
   let count = 0;
   for (const jsonlPath of newPaths) {
+    try {
+      if (statSync(jsonlPath).mtimeMs > cutoff) continue;
+    } catch {
+      continue;
+    }
     const parsed = parseSession(jsonlPath);
     await pool.query(
       `INSERT INTO cc_sessions (session_id, title, task_prompt, result_summary, jsonl_path)

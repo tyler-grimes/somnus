@@ -11,8 +11,11 @@ LOCAL_DIR="$HOME/Backups/somnus"
 
 mkdir -p "$LOCAL_DIR"
 
+# Clean up any orphaned partials from a previous failed scp.
+rm -f "$LOCAL_DIR"/*.dump.partial 2>/dev/null || true
+
 latest=$(ssh -o ConnectTimeout=10 -o BatchMode=yes "$VM_HOST" \
-  "ls -1t $REMOTE_DIR/brain-*.dump 2>/dev/null | head -1") || exit 0
+  "ls -1 $REMOTE_DIR/brain-*.dump 2>/dev/null | sort -r | head -1") || exit 0
 [ -n "$latest" ] || exit 0
 
 base=$(basename "$latest")
@@ -21,7 +24,7 @@ if [ ! -f "$LOCAL_DIR/$base" ]; then
   mv "$LOCAL_DIR/$base.partial" "$LOCAL_DIR/$base"
 fi
 
-# Prune to the 30 newest dumps.
-ls -1t "$LOCAL_DIR"/brain-*.dump 2>/dev/null | tail -n +31 | while read -r f; do
+# Prune to the 30 newest dumps (sort by filename/date, not mtime).
+ls -1 "$LOCAL_DIR"/brain-*.dump 2>/dev/null | sort -r | tail -n +31 | while read -r f; do
   rm -f "$f"
 done

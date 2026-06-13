@@ -245,11 +245,11 @@ export async function runGapAnalysis(): Promise<GapAnalysisSummary> {
     const slug = gapSlug(gap.description);
     try {
       const existing = await pool.query(
-        `SELECT 1 FROM pages WHERE slug = $1 AND deleted_at IS NULL`,
-        [slug],
+        `SELECT 1 FROM pages WHERE frontmatter->>'gapId' = $1 AND deleted_at IS NULL`,
+        [gap.id],
       );
       if ((existing.rowCount ?? 0) > 0) {
-        console.log(`[gap-analysis] gap "${gap.id}" already researched (slug: ${slug}), skipping`);
+        console.log(`[gap-analysis] gap "${gap.id}" already researched (gapId: ${gap.id}), skipping`);
         continue;
       }
 
