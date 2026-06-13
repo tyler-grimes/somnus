@@ -1,563 +1,412 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Somnus</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Somnus · console</title>
+<style>
+  :root {
+    --bg0:#06050e; --bg1:#0c0a1e;
+    --ink:#cdc9ec; --dim:#7a769e; --faint:#4b4870;
+    --cyan:#6ee7ff; --violet:#b39dff; --moon:#eae6ff;
+    --win:rgba(18,16,38,0.72); --win-edge:rgba(140,130,220,0.22);
+    --glow:rgba(120,160,255,0.55);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg0);
+    color:var(--ink); font-family:var(--mono); font-size:13px;
+    -webkit-font-smoothing:antialiased; user-select:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; }
+  #bg { z-index:0; }
+  #links { z-index:1; pointer-events:none; }
+  #stage { position:fixed; inset:0; z-index:2; }
 
-    :root {
-      --bg:      #0d1117;
-      --surface: #161b22;
-      --border:  #30363d;
-      --text:    #c9d1d9;
-      --muted:   #8b949e;
-      --green:   #3fb950;
-      --red:     #f85149;
-      --yellow:  #d29922;
-      --blue:    #58a6ff;
-      --purple:  #bc8cff;
-      --orange:  #ffa657;
-    }
+  /* ---- Somnus core ---- */
+  #core {
+    position:fixed; left:50%; top:50%; width:160px; height:160px;
+    transform:translate(-50%,-50%); z-index:3; cursor:pointer;
+    --gx:50%; --gy:42%;
+    --pulse:0;
+  }
+  #core .orb {
+    position:absolute; inset:0; border-radius:50%;
+    background:
+      radial-gradient(40% 40% at var(--gx) var(--gy), rgba(255,255,255,0.95), rgba(180,200,255,0.5) 35%, transparent 62%),
+      radial-gradient(circle at 50% 50%, #2a2a55 0%, #14132e 55%, #0b0a1c 100%);
+    box-shadow:
+      0 0 60px 8px var(--glow),
+      0 0 140px 30px rgba(110,150,255,calc(0.18 + var(--pulse)*0.4)),
+      inset 0 0 50px rgba(120,150,255,0.25);
+    animation:breathe 7s ease-in-out infinite;
+    transition:box-shadow .4s ease;
+  }
+  #core .ring {
+    position:absolute; inset:-14px; border-radius:50%;
+    border:1px solid rgba(140,160,255,0.18);
+    box-shadow:0 0 24px rgba(110,150,255,0.15) inset;
+    animation:spin 60s linear infinite;
+  }
+  #core .ring.r2 { inset:-26px; border-color:rgba(180,150,255,0.12);
+    animation-duration:95s; animation-direction:reverse; }
+  #core .label {
+    position:absolute; left:50%; top:calc(100% + 18px); transform:translateX(-50%);
+    text-align:center; white-space:nowrap; pointer-events:none; }
+  #core .name { letter-spacing:.5em; color:var(--moon); font-size:13px; text-shadow:0 0 12px var(--glow); }
+  #core .state { margin-top:5px; font-size:10px; letter-spacing:.28em; color:var(--cyan); text-transform:uppercase; opacity:.85; }
+  #core.dreaming .orb { animation:breathe 4s ease-in-out infinite; }
+  #core.dreaming { --gx:50%; --gy:50%; }
+  #core.dragwatch .orb { box-shadow:0 0 80px 12px var(--glow), 0 0 180px 50px rgba(140,120,255,0.35), inset 0 0 60px rgba(150,170,255,0.4); }
 
-    html, body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.5;
-    }
+  @keyframes breathe { 0%,100%{ transform:translate(-50%,-50%) scale(1);} 50%{ transform:translate(-50%,-50%) scale(1.045);} }
+  @keyframes spin { to { transform:rotate(360deg);} }
 
-    #app {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 14px 16px;
-      display: grid;
-      gap: 10px;
-    }
+  /* ---- floating windows ---- */
+  .win {
+    position:absolute; min-width:220px; min-height:120px; width:340px; height:260px;
+    background:var(--win); backdrop-filter:blur(14px) saturate(1.2);
+    -webkit-backdrop-filter:blur(14px) saturate(1.2);
+    border:1px solid var(--win-edge); border-radius:12px;
+    box-shadow:0 18px 60px -20px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3),
+      0 0 30px -10px var(--accent, var(--glow));
+    display:flex; flex-direction:column; overflow:hidden;
+    transition:box-shadow .3s ease, opacity .4s ease, filter .4s ease;
+    opacity:.96; top:0; left:0;
+  }
+  .win.dim { opacity:.28; filter:saturate(.5) blur(.4px); }
+  .win.focused { box-shadow:0 24px 80px -16px rgba(0,0,0,0.85), 0 0 40px -4px var(--accent, var(--glow)); opacity:1; }
+  .win .bar {
+    display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:grab;
+    background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0));
+    border-bottom:1px solid rgba(140,130,220,0.14); flex:0 0 auto; touch-action:none;
+  }
+  .win .bar:active { cursor:grabbing; }
+  .win .dot { width:9px; height:9px; border-radius:50%; background:var(--accent,#6ee7ff);
+    box-shadow:0 0 10px var(--accent,#6ee7ff); flex:0 0 auto; }
+  .win .ttl { letter-spacing:.18em; text-transform:uppercase; font-size:11px; color:var(--ink); flex:1; }
+  .win .ttl small { color:var(--dim); letter-spacing:.05em; text-transform:none; }
+  .win .body { flex:1; overflow:auto; padding:10px 12px; user-select:text; scrollbar-width:thin;
+    scrollbar-color:rgba(140,130,220,0.4) transparent; }
+  .win .body::-webkit-scrollbar { width:7px; }
+  .win .body::-webkit-scrollbar-thumb { background:rgba(140,130,220,0.35); border-radius:4px; }
+  .win .grip { position:absolute; right:2px; bottom:2px; width:16px; height:16px; cursor:nwse-resize; touch-action:none;
+    background:linear-gradient(135deg, transparent 50%, rgba(150,160,255,0.5) 50%, rgba(150,160,255,0.5) 62%, transparent 62%, transparent 74%, rgba(150,160,255,0.4) 74%);
+    border-bottom-right-radius:12px; }
 
-    /* ── header ── */
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    header h1 {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: var(--text);
-    }
-    #status-line {
-      font-size: 11px;
-      color: var(--muted);
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-    #refresh-btn {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      border-radius: 4px;
-      padding: 2px 8px;
-      font-size: 10px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    #refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+  /* content bits */
+  .row { padding:6px 0; border-bottom:1px dashed rgba(120,120,170,0.12); line-height:1.45; }
+  .row:last-child { border-bottom:0; }
+  .tag { display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; letter-spacing:.06em;
+    background:rgba(110,231,255,0.12); color:var(--cyan); border:1px solid rgba(110,231,255,0.25); }
+  .tag.v { background:rgba(179,157,255,0.12); color:var(--violet); border-color:rgba(179,157,255,0.28); }
+  .meta { color:var(--dim); font-size:10px; }
+  .big { font-size:34px; color:var(--moon); text-shadow:0 0 18px var(--glow); letter-spacing:.02em; }
+  .sub { color:var(--dim); font-size:11px; margin-top:2px; }
+  .bars { display:flex; align-items:flex-end; gap:6px; height:70px; margin-top:14px; }
+  .bars .b { flex:1; background:linear-gradient(180deg,var(--cyan),rgba(110,231,255,0.15));
+    border-radius:3px 3px 0 0; min-height:2px; position:relative; }
+  .bars .b span { position:absolute; bottom:-16px; left:0; right:0; text-align:center; font-size:9px; color:var(--faint); }
+  .state-badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 7px; border-radius:5px; }
+  .s-completed { color:#7ef0c0; background:rgba(126,240,192,0.1); border:1px solid rgba(126,240,192,0.25); }
+  .s-active,.s-created { color:var(--cyan); background:rgba(110,231,255,0.12); border:1px solid rgba(110,231,255,0.3); }
+  .s-failed { color:#ff9aa8; background:rgba(255,154,168,0.1); border:1px solid rgba(255,154,168,0.3); }
+  .s-null { color:var(--faint); border:1px solid rgba(120,120,170,0.2); }
+  .empty { color:var(--faint); font-style:italic; padding:8px 0; }
+  .err { color:#ff9aa8; }
 
-    /* ── panels ── */
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 12px;
-      border-bottom: 1px solid var(--border);
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      background: #0d111799;
-    }
-    .panel-body {
-      padding: 10px 12px;
-      overflow-y: auto;
-      max-height: 420px;
-    }
-
-    /* ── 2-col grid ── */
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    /* ── scheduler ── */
-    .sched-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--border);
-    }
-    .sched-card {
-      background: var(--surface);
-      padding: 10px 14px;
-    }
-    .sched-name {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 2px;
-    }
-    .sched-cron {
-      font-size: 10px;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-    .sched-state-row {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 11px;
-      margin-bottom: 3px;
-    }
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .dot-green  { background: var(--green); box-shadow: 0 0 4px var(--green); }
-    .dot-red    { background: var(--red); }
-    .dot-blue   { background: var(--blue); animation: pulse 1.2s infinite; }
-    .dot-yellow { background: var(--yellow); }
-    .dot-gray   { background: var(--border); }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
-    .sched-ago {
-      font-size: 10px;
-      color: var(--muted);
-    }
-
-    /* ── episodes ── */
-    .episode {
-      padding: 7px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .episode:last-child { border-bottom: none; }
-    .ep-meta {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 3px;
-      flex-wrap: wrap;
-    }
-    .badge {
-      font-size: 9px;
-      font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .role-user      { background: #1f6feb33; color: var(--blue);   border: 1px solid #1f6feb66; }
-    .role-assistant { background: #23863633; color: var(--green);  border: 1px solid #23863666; }
-    .role-system    { background: #6e409233; color: var(--purple); border: 1px solid #6e409266; }
-    .role-tool      { background: #9a5c2333; color: var(--orange); border: 1px solid #9a5c2366; }
-    .source-badge   { background: var(--border); color: var(--muted); border: 1px solid transparent; }
-    .ep-time {
-      font-size: 10px;
-      color: var(--muted);
-      margin-left: auto;
-    }
-    .ep-content {
-      font-size: 11px;
-      color: var(--text);
-      white-space: pre-wrap;
-      word-break: break-word;
-      opacity: 0.9;
-    }
-    .ep-tool {
-      font-size: 10px;
-      color: var(--orange);
-      font-style: italic;
-    }
-
-    /* ── memory ── */
-    .mem-stats {
-      display: flex;
-      gap: 28px;
-      padding-bottom: 10px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .stat-val   { font-size: 24px; font-weight: 700; color: var(--text); }
-    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-top: 1px; }
-    .fact {
-      padding: 6px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .fact:last-child { border-bottom: none; }
-    .fact-meta {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-      margin-bottom: 2px;
-    }
-    .kind-badge {
-      font-size: 9px;
-      padding: 1px 5px;
-      border-radius: 3px;
-      background: var(--border);
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .fact-time { font-size: 10px; color: var(--muted); margin-left: auto; }
-    .fact-claim { font-size: 11px; color: var(--text); word-break: break-word; }
-
-    /* ── spend ── */
-    .spend-hero {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-      padding-bottom: 10px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .spend-amount { font-size: 26px; font-weight: 700; color: var(--text); }
-    .spend-sub    { font-size: 10px; color: var(--muted); }
-    .bar-row {
-      display: grid;
-      grid-template-columns: 32px 1fr 58px;
-      gap: 8px;
-      align-items: center;
-      padding: 3px 0;
-    }
-    .bar-day    { font-size: 10px; color: var(--muted); text-align: right; }
-    .bar-track  { height: 9px; background: var(--border); border-radius: 2px; overflow: hidden; }
-    .bar-fill   { height: 100%; background: var(--blue); border-radius: 2px; min-width: 1px; }
-    .bar-fill.today { background: var(--green); }
-    .bar-cost   { font-size: 10px; color: var(--muted); text-align: right; }
-
-    /* ── cc sessions ── */
-    .ccs-item {
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .ccs-item:last-child { border-bottom: none; }
-    .ccs-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 2px;
-      word-break: break-word;
-    }
-    .ccs-meta {
-      display: flex;
-      gap: 10px;
-      font-size: 10px;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
-    .ccs-path {
-      font-size: 9px;
-      color: var(--muted);
-      opacity: 0.7;
-      word-break: break-all;
-    }
-    .ccs-prompt {
-      font-size: 11px;
-      color: var(--muted);
-      word-break: break-word;
-      margin-top: 2px;
-    }
-
-    /* ── utility ── */
-    .error   { color: var(--red);   font-size: 11px; padding: 4px 0; }
-    .empty   { color: var(--muted); font-size: 11px; padding: 4px 0; font-style: italic; }
-    .loading { color: var(--muted); font-size: 11px; padding: 4px 0; }
-  </style>
+  #hint { position:fixed; left:14px; bottom:12px; z-index:4; color:var(--faint); font-size:10px;
+    letter-spacing:.08em; pointer-events:none; }
+  #reset { position:fixed; right:14px; bottom:12px; z-index:4; color:var(--dim); font-size:10px;
+    letter-spacing:.1em; cursor:pointer; background:none; border:1px solid rgba(120,120,170,0.25);
+    padding:4px 9px; border-radius:6px; font-family:var(--mono); }
+  #reset:hover { color:var(--cyan); border-color:rgba(110,231,255,0.4); }
+  @media (prefers-reduced-motion: reduce) { #core .orb,#core .ring { animation:none !important; } }
+</style>
 </head>
 <body>
-<div id="app">
-
-  <header>
-    <h1>SOMNUS</h1>
-    <div id="status-line">
-      <span id="updated-at">—</span>
-      <span id="countdown"></span>
-      <button id="refresh-btn" onclick="refresh()">refresh</button>
-    </div>
-  </header>
-
-  <!-- Scheduler -->
-  <div class="panel">
-    <div class="panel-header">
-      <span>Scheduler</span>
-      <span id="sched-badge" style="font-size:10px;color:var(--muted)">pg-boss</span>
-    </div>
-    <div class="sched-grid" id="sched-grid">
-      <div class="sched-card"><span class="loading">loading…</span></div>
-    </div>
-  </div>
-
-  <!-- Feed + Memory -->
-  <div class="grid-2">
-    <div class="panel">
-      <div class="panel-header">
-        <span>Live Feed</span>
-        <span id="feed-badge" style="font-size:10px;color:var(--muted)">episodes</span>
-      </div>
-      <div class="panel-body" id="feed-body"><p class="loading">loading…</p></div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <span>Memory</span>
-        <span id="mem-badge" style="font-size:10px;color:var(--muted)">facts</span>
-      </div>
-      <div class="panel-body" id="mem-body"><p class="loading">loading…</p></div>
-    </div>
-  </div>
-
-  <!-- Spend + CC Sessions -->
-  <div class="grid-2">
-    <div class="panel">
-      <div class="panel-header">
-        <span>Spend</span>
-        <span id="spend-badge" style="font-size:10px;color:var(--muted)">spend_log</span>
-      </div>
-      <div class="panel-body" id="spend-body"><p class="loading">loading…</p></div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <span>CC Sessions</span>
-        <span id="ccs-badge" style="font-size:10px;color:var(--muted)">cc_sessions</span>
-      </div>
-      <div class="panel-body" id="ccs-body"><p class="loading">loading…</p></div>
-    </div>
-  </div>
-
+<canvas id="bg"></canvas>
+<canvas id="links"></canvas>
+<div id="stage"></div>
+<div id="core" title="Somnus">
+  <div class="ring r2"></div><div class="ring"></div>
+  <div class="orb"></div>
+  <div class="label"><div class="name">SOMNUS</div><div class="state" id="coreState">awake</div></div>
 </div>
+<div id="hint">drag titlebars · drag corner to resize · double-click a window to focus · click the void to release</div>
+<button id="reset">reset layout</button>
+
 <script>
-// ── utils ────────────────────────────────────────────────────────────
+const $ = (s,r=document)=>r.querySelector(s);
+const stage = $('#stage'), core = $('#core'), coreState = $('#coreState');
 
-function esc(s) {
-  if (s == null) return '';
-  const d = document.createElement('div');
-  d.textContent = String(s);
-  return d.innerHTML;
+const WINDOWS = [
+  { id:'memory',    title:'memory',    sub:'facts',     accent:'#b39dff', api:'/api/memory',     render:renderMemory },
+  { id:'episodes',  title:'episodes',  sub:'dialogue',  accent:'#6ee7ff', api:'/api/episodes',   render:renderEpisodes },
+  { id:'sessions',  title:'sessions',  sub:'cc.sh',     accent:'#7ef0c0', api:'/api/cc-sessions',render:renderSessions },
+  { id:'spend',     title:'spend',     sub:'usd',       accent:'#ffd479', api:'/api/spend',      render:renderSpend },
+  { id:'scheduler', title:'scheduler', sub:'dream · gaps · brief', accent:'#ff9ec7', api:'/api/scheduler', render:renderScheduler },
+];
+const els = {};
+let zTop = 10;
+let focusedId = null;
+
+function defaultLayout(){
+  const W = innerWidth, H = innerHeight, cx = W/2, cy = H/2;
+  const ww = Math.max(260, Math.min(360, W*0.30)), wh = Math.max(200, Math.min(280, H*0.34));
+  const R = Math.min(W,H)*0.42 + 70;
+  const order = ['scheduler','memory','episodes','sessions','spend'];
+  const layout = {};
+  order.forEach((id,i)=>{
+    const a = (-Math.PI/2) + i*(2*Math.PI/order.length);
+    let x = cx + Math.cos(a)*R - ww/2;
+    let y = cy + Math.sin(a)*R*0.80 - wh/2;
+    x = Math.max(12, Math.min(W-ww-12, x));
+    y = Math.max(12, Math.min(H-wh-12, y));
+    layout[id] = { x, y, w:ww, h:wh };
+  });
+  return layout;
+}
+function loadLayout(){
+  try { const s = JSON.parse(localStorage.getItem('somnus.layout')||'null'); if(s) return s; } catch{}
+  return defaultLayout();
+}
+function saveLayout(){
+  const out = {};
+  for(const id in els){ const e = els[id]; out[id] = {x:e.x,y:e.y,w:e.w,h:e.h}; }
+  localStorage.setItem('somnus.layout', JSON.stringify(out));
+}
+function place(e){ e.win.style.transform = `translate(${e.x}px,${e.y}px)`; e.win.style.width=e.w+'px'; e.win.style.height=e.h+'px'; }
+
+function makeWindow(def, geo){
+  const win = document.createElement('div');
+  win.className = 'win'; win.style.setProperty('--accent', def.accent);
+  win.innerHTML = `
+    <div class="bar"><span class="dot"></span>
+      <span class="ttl">${def.title} <small>${def.sub}</small></span></div>
+    <div class="body"><div class="empty">connecting…</div></div>
+    <div class="grip"></div>`;
+  stage.appendChild(win);
+  const e = { win, body:$('.body',win), def, x:geo.x, y:geo.y, w:geo.w, h:geo.h };
+  els[def.id] = e; place(e); raise(def.id);
+
+  const bar = $('.bar',win), grip = $('.grip',win);
+  win.addEventListener('pointerdown', ()=>raise(def.id));
+  bar.addEventListener('dblclick', ()=> focusedId===def.id ? releaseFocus() : setFocus(def.id));
+
+  bar.addEventListener('pointerdown', ev=>{
+    if(ev.target.closest('.grip')) return;
+    ev.preventDefault(); bar.setPointerCapture(ev.pointerId);
+    const sx=ev.clientX, sy=ev.clientY, ox=e.x, oy=e.y;
+    core.classList.add('dragwatch');
+    const move = m=>{
+      e.x = Math.max(-e.w*0.6, Math.min(innerWidth-40, ox + (m.clientX-sx)));
+      e.y = Math.max(0, Math.min(innerHeight-40, oy + (m.clientY-sy)));
+      place(e); gazeToward(e);
+    };
+    const up = ()=>{ bar.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
+      core.classList.remove('dragwatch'); saveLayout(); };
+    bar.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
+  });
+  grip.addEventListener('pointerdown', ev=>{
+    ev.preventDefault(); ev.stopPropagation(); grip.setPointerCapture(ev.pointerId);
+    const sx=ev.clientX, sy=ev.clientY, ow=e.w, oh=e.h;
+    core.classList.add('dragwatch');
+    const move = m=>{ e.w=Math.max(220, ow+(m.clientX-sx)); e.h=Math.max(120, oh+(m.clientY-sy)); place(e); gazeToward(e); };
+    const up = ()=>{ grip.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
+      core.classList.remove('dragwatch'); saveLayout(); };
+    grip.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
+  });
+  return e;
+}
+function raise(id){ els[id].win.style.zIndex = ++zTop; }
+function center(e){ return { x:e.x + e.w/2, y:e.y + e.h/2 }; }
+
+function setFocus(id){
+  focusedId = id;
+  for(const k in els){ els[k].win.classList.toggle('dim', k!==id); els[k].win.classList.toggle('focused', k===id); }
+  const e = els[id];
+  e._restore = {x:e.x,y:e.y,w:e.w,h:e.h};
+  e.w = Math.min(innerWidth*0.6, 720); e.h = Math.min(innerHeight*0.72, 620);
+  e.x = (innerWidth-e.w)/2; e.y = (innerHeight-e.h)/2;
+  e.win.style.transition='transform .45s cubic-bezier(.2,.8,.2,1), width .45s, height .45s, box-shadow .3s, opacity .4s';
+  place(e); raise(id); gazeToward(e);
+  setTimeout(()=>{ if(e.win) e.win.style.transition=''; },480);
+}
+function releaseFocus(){
+  if(!focusedId) return;
+  const e = els[focusedId];
+  if(e && e._restore){ Object.assign(e, e._restore); delete e._restore;
+    e.win.style.transition='transform .45s cubic-bezier(.2,.8,.2,1), width .45s, height .45s'; place(e);
+    setTimeout(()=>{ if(e.win) e.win.style.transition=''; },480); }
+  for(const k in els){ els[k].win.classList.remove('dim','focused'); }
+  focusedId=null;
+}
+stage.addEventListener('pointerdown', ev=>{ if(ev.target===stage) releaseFocus(); });
+core.addEventListener('click', releaseFocus);
+
+// ---- gaze ----
+let gaze = {x:0.5,y:0.42}, gazeTarget={x:0.5,y:0.42};
+let activeLink=null, activeLinkUntil=0;
+function gazeToward(e){
+  const c = center(e), cx=innerWidth/2, cy=innerHeight/2;
+  const dx=c.x-cx, dy=c.y-cy, d=Math.hypot(dx,dy)||1;
+  gazeTarget = { x:0.5 + (dx/d)*0.26, y:0.42 + (dy/d)*0.22 };
+  activeLink = e.def.id; activeLinkUntil = performance.now()+900;
+}
+function gazeIdle(){ gazeTarget = {x:0.5,y:0.42}; }
+setInterval(()=>{ if(!core.classList.contains('dragwatch') && performance.now()>activeLinkUntil) gazeIdle(); }, 1500);
+
+let pulseV=0;
+function ripple(){ pulseV=1; }
+function tickCore(){
+  gaze.x += (gazeTarget.x-gaze.x)*0.12; gaze.y += (gazeTarget.y-gaze.y)*0.12;
+  core.style.setProperty('--gx',(gaze.x*100).toFixed(1)+'%');
+  core.style.setProperty('--gy',(gaze.y*100).toFixed(1)+'%');
+  pulseV *= 0.94; core.style.setProperty('--pulse', pulseV.toFixed(3));
+  requestAnimationFrame(tickCore);
 }
 
-function timeAgo(ts) {
-  if (!ts) return '—';
-  const s = Math.round((Date.now() - new Date(ts)) / 1000);
-  if (s < 0)    return 'just now';
-  if (s < 60)   return s + 's ago';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-  return Math.floor(s / 86400) + 'd ago';
+// =================== rendering ===================
+function timeAgo(ts){ if(!ts) return ''; const s=(Date.now()-new Date(ts).getTime())/1000;
+  if(s<60) return Math.floor(s)+'s'; if(s<3600) return Math.floor(s/60)+'m';
+  if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d'; }
+function esc(t){ return (t==null?'':t.toString()).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+let lastFactKey=null;
+function renderMemory(d){
+  if(d.error) return `<div class="err">${esc(d.error)}</div>`;
+  const head = `<div style="display:flex;gap:18px;align-items:baseline;margin-bottom:8px">
+    <div><span class="big">${d.total}</span><div class="sub">facts held</div></div>
+    <div><span class="big" style="font-size:22px">+${d.added_24h}</span><div class="sub">last 24h</div></div></div>`;
+  if(d.recent && d.recent[0]){ const k=d.recent[0].claim+d.recent[0].created_at;
+    if(lastFactKey && k!==lastFactKey) ripple(); lastFactKey=k; }
+  const rows = (d.recent||[]).map(f=>`<div class="row">
+    <span class="tag ${f.kind==='persona'?'v':''}">${esc(f.kind)}</span> ${esc(f.claim)}
+    <div class="meta">${esc(f.source||'')} · conf ${(f.confidence==null?'':f.confidence)} · ${timeAgo(f.created_at)} ago · ${esc(f.visibility||'')}</div></div>`).join('');
+  return head + (rows||'<div class="empty">no facts yet</div>');
 }
-
-const CRON_LABELS = {
-  '0 4 * * *':    '04:00 nightly',
-  '0 8 * * *':    '08:00 daily',
-  '*/10 * * * *': 'every 10 min',
-  '*/15 * * * *': 'every 15 min',
-};
-
-function cronLabel(cron) {
-  return cron ? (CRON_LABELS[cron] || cron) : '—';
+function renderEpisodes(d){
+  if(d.error) return `<div class="err">${esc(d.error)}</div>`;
+  if(!d.length) return '<div class="empty">no episodes yet</div>';
+  return d.map(e=>`<div class="row"><span class="tag ${e.role==='assistant'?'v':''}">${esc(e.role)}</span>
+    <span class="meta">${esc(e.source||'')}${e.tool_name?' · '+esc(e.tool_name):''} · ${timeAgo(e.created_at)} ago</span>
+    <div>${esc(e.content)}</div></div>`).join('');
 }
-
-function stateDot(state) {
-  const cls = { completed: 'green', failed: 'red', active: 'blue', created: 'yellow', retry: 'yellow' }[state] || 'gray';
-  return `<span class="dot dot-${cls}"></span>`;
+function renderSessions(d){
+  if(d.error) return `<div class="err">${esc(d.error)}</div>`;
+  if(!d.length) return '<div class="empty">no coding sessions yet</div>';
+  return d.map(s=>`<div class="row"><b style="color:var(--moon)">${esc(s.title||(s.session_id||'session').slice(0,8))}</b>
+    <span class="meta"> · ${timeAgo(s.ingested_at)} ago</span>
+    ${s.task_prompt?`<div class="meta">▸ ${esc(s.task_prompt)}</div>`:''}
+    ${s.result_summary?`<div>${esc(s.result_summary)}</div>`:''}</div>`).join('');
 }
-
-function stateLabel(state) {
-  if (!state) return 'no data';
-  return state;
+function renderSpend(d){
+  if(d.error) return `<div class="err">${esc(d.error)}</div>`;
+  const today = (d.today||0);
+  const wk = d.week||[];
+  const max = Math.max(0.0001, ...wk.map(w=>w.cost));
+  const bars = wk.map(w=>`<div class="b" style="height:${Math.max(2,(w.cost/max)*100)}%" title="$${w.cost.toFixed(2)}">
+    <span>${new Date(w.day).toLocaleDateString(undefined,{weekday:'short'}).slice(0,2)}</span></div>`).join('');
+  return `<div><span class="big">$${today.toFixed(2)}</span><div class="sub">spent today (cap $10)</div></div>
+    <div class="bars">${bars||'<div class="empty">no spend logged</div>'}</div>
+    <div class="sub" style="margin-top:22px">7-day API spend</div>`;
 }
-
-async function api(path) {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
-  return r.json();
-}
-
-// ── panels ───────────────────────────────────────────────────────────
-
-async function loadScheduler() {
-  const grid = document.getElementById('sched-grid');
-  const data = await api('/api/scheduler');
-  grid.innerHTML = data.map(job => {
-    const lastTs = job.completedon || job.startedon || job.createdon;
-    return `<div class="sched-card">
-      <div class="sched-name">${esc(job.name)}</div>
-      <div class="sched-cron">${esc(cronLabel(job.cron))}${job.timezone ? ' · ' + esc(job.timezone) : ''}</div>
-      <div class="sched-state-row">
-        ${stateDot(job.state)}
-        <span style="color:var(--${{'completed':'green','failed':'red','active':'blue','created':'yellow','retry':'yellow'}[job.state]||'muted'})">${esc(stateLabel(job.state))}</span>
-      </div>
-      <div class="sched-ago">${timeAgo(lastTs)}</div>
-    </div>`;
+const CRON_LABEL = { 'dream-cycle':'04:00 nightly','morning-briefing':'08:00 daily','gap-analysis':'after dream',
+  'cc-spend-sweep':'every 10m','cc-ingest-sweep':'every 15m' };
+let dreaming=false;
+function renderScheduler(d){
+  if(!Array.isArray(d)) return `<div class="err">scheduler unavailable</div>`;
+  const dream = d.find(j=>j.name==='dream-cycle');
+  dreaming = !!(dream && (dream.state==='active' || dream.state==='created'));
+  return d.map(j=>{
+    const st = j.state||'null';
+    const when = j.completedon? timeAgo(j.completedon)+' ago' : (j.startedon? 'running…':'—');
+    return `<div class="row" style="display:flex;align-items:center;gap:8px">
+      <span style="flex:1">${esc(j.name)}<div class="meta">${CRON_LABEL[j.name]||esc(j.cron||'')}</div></span>
+      <span class="state-badge s-${st}">${esc(st)}</span>
+      <span class="meta" style="width:64px;text-align:right">${when}</span></div>`;
   }).join('');
 }
 
-async function loadFeed() {
-  const body = document.getElementById('feed-body');
-  const badge = document.getElementById('feed-badge');
-  const data = await api('/api/episodes');
-  badge.textContent = data.length + ' rows';
-  if (!data.length) { body.innerHTML = '<p class="empty">no episodes yet</p>'; return; }
-  body.innerHTML = data.map(ep => `
-    <div class="episode">
-      <div class="ep-meta">
-        <span class="badge role-${esc(ep.role)}">${esc(ep.role)}</span>
-        <span class="badge source-badge">${esc(ep.source)}</span>
-        ${ep.tool_name ? `<span class="ep-tool">${esc(ep.tool_name)}</span>` : ''}
-        ${ep.cost_usd ? `<span style="font-size:10px;color:var(--muted)">$${parseFloat(ep.cost_usd).toFixed(5)}</span>` : ''}
-        <span class="ep-time">${timeAgo(ep.created_at)}</span>
-      </div>
-      <div class="ep-content">${esc(ep.content)}</div>
-    </div>
-  `).join('');
+// =================== polling ===================
+async function poll(def){
+  const e = els[def.id]; if(!e) return;
+  try { const r = await fetch(def.api, {cache:'no-store'}); const d = await r.json();
+    e.body.innerHTML = def.render(d);
+  } catch(err){ e.body.innerHTML = `<div class="err">offline — ${esc(err.message||err)}</div>`; }
+}
+function pollAll(){ WINDOWS.forEach(poll); setTimeout(updateCoreState, 200); }
+function updateCoreState(){
+  const hr = new Date().getHours();
+  core.classList.toggle('dreaming', dreaming);
+  coreState.textContent = dreaming ? 'dreaming' : (hr>=0 && hr<6 ? 'resting' : 'awake');
+  coreState.style.color = dreaming ? 'var(--violet)' : 'var(--cyan)';
 }
 
-async function loadMemory() {
-  const body = document.getElementById('mem-body');
-  const badge = document.getElementById('mem-badge');
-  const data = await api('/api/memory');
-  badge.textContent = data.total + ' facts';
-  const factsHtml = (data.recent || []).map(f => `
-    <div class="fact">
-      <div class="fact-meta">
-        <span class="kind-badge">${esc(f.kind)}</span>
-        <span style="font-size:10px;color:var(--muted)">${esc(f.source || '')}</span>
-        <span class="fact-time">${timeAgo(f.created_at)}</span>
-      </div>
-      <div class="fact-claim">${esc(f.claim)}</div>
-    </div>
-  `).join('');
-  body.innerHTML = `
-    <div class="mem-stats">
-      <div><div class="stat-val">${data.total}</div><div class="stat-label">total</div></div>
-      <div><div class="stat-val" style="color:var(--green)">+${data.added_24h}</div><div class="stat-label">last 24 h</div></div>
-    </div>
-    ${factsHtml || '<p class="empty">no facts yet</p>'}
-  `;
+// =================== background canvas ===================
+const bg = $('#bg'), bgx = bg.getContext('2d'), lk = $('#links'), lx = lk.getContext('2d');
+let stars=[], W2=0, H2=0, DPR=Math.min(devicePixelRatio||1, 2);
+function resizeCanvas(){
+  DPR = Math.min(devicePixelRatio||1, 2);
+  for(const c of [bg, lk]){ c.width=innerWidth*DPR; c.height=innerHeight*DPR; }
+  W2=innerWidth; H2=innerHeight;
+  bgx.setTransform(DPR,0,0,DPR,0,0); lx.setTransform(DPR,0,0,DPR,0,0);
+  stars = Array.from({length:Math.round(W2*H2/9000)}, ()=>({
+    x:Math.random()*W2, y:Math.random()*H2, z:Math.random()*0.8+0.2, tw:Math.random()*Math.PI*2 }));
 }
-
-async function loadSpend() {
-  const body = document.getElementById('spend-body');
-  const badge = document.getElementById('spend-badge');
-  const data = await api('/api/spend');
-  badge.textContent = '$' + data.today.toFixed(4) + ' today';
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const maxCost = Math.max(...(data.week || []).map(r => r.cost), 0.0001);
-  const barsHtml = (data.week || []).map(r => {
-    const pct = (r.cost / maxCost * 100).toFixed(1);
-    const isToday = r.day === todayStr;
-    // r.day is a date string like "2026-06-11"; parse at noon UTC to avoid off-by-one from TZ
-    const label = new Date(r.day + 'T12:00:00Z').toLocaleDateString('en', { weekday: 'short' });
-    return `<div class="bar-row">
-      <span class="bar-day">${isToday ? '<b style="color:var(--green)">' + label + '</b>' : label}</span>
-      <div class="bar-track"><div class="bar-fill${isToday ? ' today' : ''}" style="width:${pct}%"></div></div>
-      <span class="bar-cost">$${r.cost.toFixed(4)}</span>
-    </div>`;
-  }).join('');
-
-  body.innerHTML = `
-    <div class="spend-hero">
-      <span class="spend-amount">$${data.today.toFixed(4)}</span>
-      <span class="spend-sub">today</span>
-    </div>
-    ${barsHtml || '<p class="empty">no spend data</p>'}
-  `;
-}
-
-async function loadCCSessions() {
-  const body = document.getElementById('ccs-body');
-  const badge = document.getElementById('ccs-badge');
-  const data = await api('/api/cc-sessions');
-  badge.textContent = data.length + ' sessions';
-  if (!data.length) { body.innerHTML = '<p class="empty">no CC sessions yet</p>'; return; }
-  body.innerHTML = data.map(s => {
-    const filename = (s.jsonl_path || '').split('/').pop() || '';
-    return `<div class="ccs-item">
-      <div class="ccs-title">${esc(s.title || s.session_id)}</div>
-      <div class="ccs-meta">
-        <span>${timeAgo(s.ingested_at)}</span>
-        ${filename ? `<span class="ccs-path">${esc(filename)}</span>` : ''}
-      </div>
-      ${s.task_prompt ? `<div class="ccs-prompt">${esc(s.task_prompt)}</div>` : ''}
-    </div>`;
-  }).join('');
-}
-
-// ── refresh loop ─────────────────────────────────────────────────────
-
-let nextRefreshAt = 0;
-let refreshing = false;
-
-async function refresh() {
-  if (refreshing) return;
-  refreshing = true;
-  document.getElementById('updated-at').textContent = 'refreshing…';
-  document.getElementById('countdown').textContent = '';
-
-  await Promise.allSettled([
-    loadScheduler().catch(err => {
-      document.getElementById('sched-grid').innerHTML =
-        `<div class="sched-card"><span class="error">${esc(String(err))}</span></div>`;
-    }),
-    loadFeed().catch(err => {
-      document.getElementById('feed-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
-    }),
-    loadMemory().catch(err => {
-      document.getElementById('mem-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
-    }),
-    loadSpend().catch(err => {
-      document.getElementById('spend-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
-    }),
-    loadCCSessions().catch(err => {
-      document.getElementById('ccs-body').innerHTML = `<p class="error">${esc(String(err))}</p>`;
-    }),
-  ]);
-
-  const now = new Date();
-  document.getElementById('updated-at').textContent =
-    'updated ' + now.toLocaleTimeString();
-  nextRefreshAt = now.getTime() + 30_000;
-  refreshing = false;
-}
-
-function tick() {
-  const rem = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
-  if (rem > 0) {
-    document.getElementById('countdown').textContent = 'next in ' + rem + 's';
-  } else if (!refreshing && nextRefreshAt > 0) {
-    refresh();
+function drawBg(t){
+  const g = bgx.createLinearGradient(0,0,W2,H2);
+  g.addColorStop(0,'#06050e'); g.addColorStop(0.6,'#0a081a'); g.addColorStop(1,'#0c0a1e');
+  bgx.fillStyle=g; bgx.fillRect(0,0,W2,H2);
+  const mx=W2*0.82, my=H2*0.2;
+  const mg=bgx.createRadialGradient(mx,my,0,mx,my,260);
+  mg.addColorStop(0,'rgba(150,160,230,0.16)'); mg.addColorStop(1,'transparent');
+  bgx.fillStyle=mg; bgx.beginPath(); bgx.arc(mx,my,260,0,7); bgx.fill();
+  for(const s of stars){
+    const a = 0.35 + Math.sin(t*0.001 + s.tw)*0.3;
+    bgx.globalAlpha = Math.max(0,a)*s.z; bgx.fillStyle = s.z>0.7?'#cfe0ff':'#9aa6e0';
+    bgx.fillRect(s.x, s.y, s.z*1.6, s.z*1.6);
+    s.y += s.z*0.06; if(s.y>H2){ s.y=0; s.x=Math.random()*W2; }
   }
+  bgx.globalAlpha=1;
 }
+function quad(x0,y0,cx,cy,x1,y1,t){ const u=1-t;
+  return { x:u*u*x0+2*u*t*cx+t*t*x1, y:u*u*y0+2*u*t*cy+t*t*y1 }; }
+function drawLinks(t){
+  lx.clearRect(0,0,W2,H2);
+  const cx=W2/2, cy=H2/2;
+  for(const id in els){
+    const e = els[id]; if(e.win.classList.contains('dim')) continue;
+    const c = center(e);
+    const mx=(cx+c.x)/2, my=(cy+c.y)/2 - 40;
+    const isActive = activeLink===id && performance.now()<activeLinkUntil;
+    const isFocus = focusedId===id;
+    const base = isActive||isFocus ? 0.7 : 0.22;
+    lx.strokeStyle = e.def.accent; lx.globalAlpha = base; lx.lineWidth = isActive||isFocus?1.8:1;
+    lx.shadowColor=e.def.accent; lx.shadowBlur = isActive||isFocus?14:5;
+    lx.beginPath(); lx.moveTo(cx,cy); lx.quadraticCurveTo(mx,my,c.x,c.y); lx.stroke();
+    const speed = isActive||isFocus?0.0011:0.0005;
+    const p = ((t*speed)+ (id.length*0.13)) % 1;
+    const bz = quad(cx,cy,mx,my,c.x,c.y,p);
+    lx.shadowBlur=12; lx.globalAlpha=Math.min(1,base+0.4); lx.fillStyle=e.def.accent;
+    lx.beginPath(); lx.arc(bz.x,bz.y, isActive||isFocus?3:2, 0,7); lx.fill();
+  }
+  lx.globalAlpha=1; lx.shadowBlur=0;
+}
+function frame(t){ drawBg(t); drawLinks(t); requestAnimationFrame(frame); }
 
-setInterval(tick, 1000);
-refresh();
+// =================== boot ===================
+function boot(){
+  const layout = loadLayout(), dflt = defaultLayout();
+  WINDOWS.forEach(def => makeWindow(def, layout[def.id] || dflt[def.id]));
+  resizeCanvas();
+  requestAnimationFrame(frame); requestAnimationFrame(tickCore);
+  pollAll(); setInterval(pollAll, 8000);
+}
+$('#reset').addEventListener('click', ()=>{ localStorage.removeItem('somnus.layout');
+  const l=defaultLayout(); for(const id in els){ Object.assign(els[id], l[id]); place(els[id]); } releaseFocus(); });
+let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(resizeCanvas,150); });
+boot();
 </script>
 </body>
 </html>

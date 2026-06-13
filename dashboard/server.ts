@@ -8,7 +8,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
 const PORT = 3001;
 const TZ = process.env.TZ ?? 'America/Denver';
-const QUEUES = ['dream-cycle', 'morning-briefing', 'cc-spend-sweep', 'cc-ingest-sweep'];
+const QUEUES = ['dream-cycle', 'gap-analysis', 'morning-briefing', 'cc-spend-sweep', 'cc-ingest-sweep'];
 
 app.use(express.static(join(__dirname, '../public')));
 
