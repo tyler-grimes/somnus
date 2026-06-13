@@ -15,7 +15,7 @@ import {
   autoModeStatus,
   CHAT_MODELS,
   getChatModel,
-  runAgentTurn,
+  runTurnExclusive,
   setAutoMode,
   setChatModel,
 } from "./agent.js";
@@ -226,7 +226,7 @@ export function createBot(
       }, 5000);
       ctx.replyWithChatAction("typing").catch(() => {});
       try {
-        const reply = await runAgentTurn(text, "telegram");
+        const reply = await runTurnExclusive(text, "telegram");
         for (const part of chunk(reply)) {
           await ctx.reply(part);
         }
