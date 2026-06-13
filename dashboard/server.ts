@@ -161,6 +161,44 @@ app.get('/api/graph', async (_req, res) => {
   }
 });
 
+const PAGE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+app.get('/api/page/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!PAGE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const pageQ = await pool.query(
+      `SELECT type, title, compiled_truth FROM pages WHERE id = $1 AND deleted_at IS NULL`,
+      [id],
+    );
+    if (pageQ.rowCount === 0) return res.status(404).json({ error: 'not found' });
+    const [factQ, linkQ] = await Promise.all([
+      pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM facts WHERE page_id = $1 AND superseded_at IS NULL`,
+        [id],
+      ),
+      pool.query(
+        `SELECT p.id, p.title, p.type, e.link_type AS "linkType", (e.from_page_id = $1) AS outgoing
+           FROM edges e
+           JOIN pages p ON p.id = CASE WHEN e.from_page_id = $1 THEN e.to_page_id ELSE e.from_page_id END
+          WHERE (e.from_page_id = $1 OR e.to_page_id = $1) AND e.valid_until IS NULL AND p.deleted_at IS NULL`,
+        [id],
+      ),
+    ]);
+    const page = pageQ.rows[0] as { type: string; title: string; compiled_truth: string | null };
+    const ct = page.compiled_truth ?? '';
+    res.json({
+      title: page.title,
+      type: page.type,
+      compiledTruth: ct.length > 400 ? ct.slice(0, 400) + '…' : ct,
+      factCount: factQ.rows[0].n,
+      links: linkQ.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 app.post('/api/chat', async (req, res) => {
   if (CHAT_TOKEN && req.get('x-somnus-token') !== CHAT_TOKEN) {
     return res.status(401).json({ error: 'unauthorized' });
