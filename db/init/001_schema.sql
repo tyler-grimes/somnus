@@ -134,7 +134,7 @@ CREATE TABLE episodes (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id        TEXT NOT NULL DEFAULT 'tyler',
   session_id      UUID,
-  source          TEXT NOT NULL,   -- 'telegram'|'cli'|'voice'|'ingestion'|'dream_cycle'
+  source          TEXT NOT NULL,   -- 'telegram'|'cli'|'web'|'voice'|'ingestion'|'dream_cycle'|'cron'
   role            TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool')),
   content         TEXT NOT NULL,
   tool_name       TEXT,
