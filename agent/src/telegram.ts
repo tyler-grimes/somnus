@@ -232,7 +232,7 @@ export function createBot(
     inflight = inflight.then(async () => {
       const typing = setInterval(() => {
         ctx.replyWithChatAction("typing").catch(() => {});
-      }, 5000);
+      }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
       try {
         const reply = await runTurnExclusive(text, "telegram");
