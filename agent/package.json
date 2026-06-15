@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
     "@anthropic-ai/sdk": "^0.104.1",
+    "cron-parser": "^5.5.0",
     "grammy": "^1.43.0",
     "pg": "^8.16.0",
     "pg-boss": "^12.18.3",
