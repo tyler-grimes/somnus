@@ -26,6 +26,7 @@ import { config } from "./config.js";
 import { isBudgetExhausted, logEpisode, logSpend, pool } from "./db.js";
 import { requestApproval } from "./approvals.js";
 import { skillsPromptSection } from "./skills.js";
+import { schedulerMcpServer } from "./scheduler-tools.js";
 import { envScrubbedBash, sandboxSettings, scrubbedSubprocessEnv } from "./sandbox.js";
 import { SAFE_BASH_RE, NETWORK_BASH_RE } from "./bash-policy.js";
 
@@ -75,6 +76,7 @@ async function decidePermission(
   const deny = (message: string): PermissionDecision => ({ behavior: "deny", message });
 
   if (toolName.startsWith("mcp__brain__")) return allow;
+  if (toolName.startsWith("mcp__scheduler__")) return allow;
 
   // Sensitive-path blocklist is absolute — it applies before and during
   // automode, on file paths and inside Bash command strings alike.
@@ -311,6 +313,7 @@ Tool triggers:
 - recent_episodes: when resuming a thread, or when ${config.ownerName} says "as I mentioned" and you don't have that context.
 - log_friction: when you're confused, blocked, fail at something, or ${config.ownerName} asks for the same kind of thing repeatedly. The dream cycle turns friction logs into new skills; honest logging is your self-improvement path.
 - core_blocks: rarely needed in chat — you already have the render below. Use only if you suspect stale state.
+- schedule_cron / list_crons / cancel_cron: You can schedule recurring tasks for ${config.ownerName}: call schedule_cron with a short kebab-case name, a standard 5-field cron expression (e.g. "0 8 * * *" for daily 8am, "0 9 * * 1-5" for weekdays 9am), and the prompt to run when it fires — its result is sent to Telegram. Use list_crons to see them and cancel_cron to remove one. Translate the owner's natural request ("every weekday morning") into the cron expression yourself.
 
 Your persona is yours to grow. The "who you are" facts in core memory belong to you: when you notice your own style crystallizing — an opinion you've formed, humor or vocabulary you share with ${config.ownerName}, a way of helping that clearly works — you may store it with remember_fact (kind: persona, one third-person sentence). The dream cycle also refines your persona nightly. Earn changes; don't perform them.
 
@@ -352,7 +355,7 @@ export function setChatModel(alias: string): string | null {
 
 export async function runAgentTurn(
   userText: string,
-  source: "telegram" | "cli" | "web",
+  source: "telegram" | "cli" | "web" | "cron",
 ): Promise<string> {
   const spent = await isBudgetExhausted();
   if (spent !== null) {
@@ -398,10 +401,11 @@ export async function runAgentTurn(
               OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
             },
           },
+          scheduler: schedulerMcpServer,
         },
         // Nothing is pre-approved except brain tools — every other call goes
         // through decidePermission, including Bash (Telegram approval).
-        allowedTools: ["mcp__brain__*"],
+        allowedTools: ["mcp__brain__*", "mcp__scheduler__*"],
         canUseTool: (toolName, input) => decidePermission(toolName, input),
       },
     })) {
@@ -470,7 +474,7 @@ export async function runAgentTurn(
 let turnChain: Promise<unknown> = Promise.resolve();
 export function runTurnExclusive(
   userText: string,
-  source: "telegram" | "cli" | "web",
+  source: "telegram" | "cli" | "web" | "cron",
 ): Promise<string> {
   const result = turnChain.then(() => runAgentTurn(userText, source));
   turnChain = result.catch(() => {});

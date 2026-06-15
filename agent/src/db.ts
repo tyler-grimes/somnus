@@ -6,7 +6,7 @@ pool.on('error', (err) => { console.error('[db] idle client error:', err); });
 
 export async function logEpisode(e: {
   sessionId?: string;
-  source: "telegram" | "cli" | "web" | "voice" | "ingestion" | "dream_cycle";
+  source: "telegram" | "cli" | "web" | "voice" | "ingestion" | "dream_cycle" | "cron";
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   costUsd?: number;
