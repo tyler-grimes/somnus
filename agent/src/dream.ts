@@ -406,7 +406,7 @@ async function draftSkills(): Promise<string> {
 // embedding) get vectors here, in batches.
 async function embedBacklog(): Promise<string> {
   if (!process.env.OPENAI_API_KEY) return "embed: skipped (no OPENAI_API_KEY)";
-  const { embedBatch } = await import("./embeddings.js");
+  const { embedBatch } = await import("somnus-shared");
   let embedded = 0;
   for (const table of ["facts", "content_chunks"] as const) {
     const textCol = table === "facts" ? "claim" : "chunk_text";

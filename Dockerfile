@@ -1,10 +1,15 @@
 # syntax=docker/dockerfile:1
-# Somnus agent image. Layout mirrors the repo (/app/agent, /app/brain-mcp)
-# because the agent spawns brain-mcp at ../../brain-mcp/dist/index.js
-# relative to agent/dist/ (agent/src/agent.ts:33).
+# Somnus agent image. Layout mirrors the repo (/app/agent, /app/brain-mcp,
+# /app/shared) because the agent spawns brain-mcp at ../../brain-mcp/dist/index.js
+# relative to agent/dist/ (agent/src/agent.ts:33), and both packages depend on
+# the somnus-shared lib via `file:../shared`.
 
 FROM node:22-slim AS build
 WORKDIR /app
+# Shared lib first: agent + brain-mcp depend on it (file:../shared) and resolve
+# its built dist at type-check time, so it must be built before they compile.
+COPY shared/ shared/
+RUN cd shared && npm ci && npm run build
 COPY brain-mcp/package.json brain-mcp/package-lock.json brain-mcp/
 COPY agent/package.json agent/package-lock.json agent/
 RUN cd brain-mcp && npm ci && cd ../agent && npm ci
@@ -23,10 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # parses the JSON output (session_id, total_cost_usd) — bump deliberately.
 RUN npm install -g @anthropic-ai/claude-code@2.1.173
 WORKDIR /app
+# somnus-shared has no runtime deps; the file: symlink only needs its
+# package.json + built dist present for module resolution.
+COPY shared/package.json shared/
 COPY brain-mcp/package.json brain-mcp/package-lock.json brain-mcp/
 COPY agent/package.json agent/package-lock.json agent/
 RUN cd brain-mcp && npm ci --omit=dev && cd ../agent && npm ci --omit=dev \
     && npm cache clean --force
+COPY --from=build /app/shared/dist shared/dist
 COPY --from=build /app/brain-mcp/dist brain-mcp/dist
 COPY --from=build /app/agent/dist agent/dist
 COPY agent/tools/ agent/tools/

@@ -18,7 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import pg from "pg";
 import { z } from "zod";
-import { embedText } from "./embeddings.js";
+import { embedText } from "somnus-shared";
 import { resolveAudience, visibilityClause } from "./visibility.js";
 
 const pool = new pg.Pool({

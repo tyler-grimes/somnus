@@ -19,6 +19,7 @@
     "grammy": "^1.43.0",
     "pg": "^8.16.0",
     "pg-boss": "^12.18.3",
+    "somnus-shared": "file:../shared",
     "zod": "^4.4.3"
   },
   "devDependencies": {

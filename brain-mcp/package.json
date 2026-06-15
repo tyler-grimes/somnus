@@ -13,6 +13,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "pg": "^8.16.0",
+    "somnus-shared": "file:../shared",
     "zod": "^3.25.0"
   },
   "devDependencies": {
