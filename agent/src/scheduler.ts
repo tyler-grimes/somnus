@@ -9,12 +9,15 @@ import { buildMorningBriefing } from "./briefing.js";
 import { sweepCcSpend } from "./ccspend.js";
 import { ingestNewSessions } from "./cc-ingest.js";
 import { runGapAnalysis } from "./gap-analysis.js";
+import { runTurnExclusive } from "./agent.js";
+import { dueCrons, markRan } from "./crons.js";
 
 const DREAM_QUEUE = "dream-cycle";
 const BRIEFING_QUEUE = "morning-briefing";
 const CC_SPEND_QUEUE = "cc-spend-sweep";
 const CC_INGEST_QUEUE = "cc-ingest-sweep";
 const GAP_ANALYSIS_QUEUE = "gap-analysis";
+const USER_CRON_TICK = "user-cron-tick";
 
 /** Proactive push to the owner — raw Bot API call, no grammY instance needed. */
 export async function notifyTelegram(text: string): Promise<void> {
@@ -90,6 +93,24 @@ export async function startScheduler(): Promise<PgBoss> {
       );
     } catch (err) {
       console.error("[gap-analysis] job failed:", err);
+    }
+  });
+
+  await boss.createQueue(USER_CRON_TICK);
+  // Every minute: run any user-defined cron whose scheduled slot just passed.
+  await boss.schedule(USER_CRON_TICK, "* * * * *", {}, { tz: config.timezone });
+  await boss.work(USER_CRON_TICK, async () => {
+    const now = new Date();
+    for (const { row, slot } of await dueCrons(now)) {
+      try {
+        const reply = await runTurnExclusive(row.prompt, "cron");
+        await notifyTelegram(`⏰ ${row.name}\n${reply}`);
+      } catch (err) {
+        console.error(`[user-cron] "${row.name}" failed:`, err);
+      } finally {
+        // Stamp the slot even on failure so a broken cron can't hot-loop every minute.
+        await markRan(row.id, slot);
+      }
     }
   });
 
