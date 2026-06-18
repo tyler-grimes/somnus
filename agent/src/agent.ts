@@ -229,17 +229,42 @@ async function renderCoreBlocks(): Promise<string> {
       ORDER BY kind = 'persona' DESC, notability DESC, recorded_at DESC
       LIMIT 30`,
   );
-  if (res.rowCount === 0) return "(no core memory yet — this is a young brain)";
-  const byKind = new Map<string, string[]>();
-  for (const r of res.rows) {
-    if (!byKind.has(r.kind)) byKind.set(r.kind, []);
-    byKind.get(r.kind)!.push(r.claim);
+  const sections: string[] = [];
+
+  if (res.rowCount && res.rowCount > 0) {
+    const byKind = new Map<string, string[]>();
+    for (const r of res.rows) {
+      if (!byKind.has(r.kind)) byKind.set(r.kind, []);
+      byKind.get(r.kind)!.push(r.claim);
+    }
+    const label = (kind: string) =>
+      kind === "persona" ? "who you are (your evolving persona)" : `${config.ownerName}'s ${kind}s`;
+    for (const [kind, claims] of byKind.entries()) {
+      sections.push(`${label(kind)}:\n${claims.map((c) => `- ${c}`).join("\n")}`);
+    }
   }
-  const label = (kind: string) =>
-    kind === "persona" ? "who you are (your evolving persona)" : `${config.ownerName}'s ${kind}s`;
-  return [...byKind.entries()]
-    .map(([kind, claims]) => `${label(kind)}:\n${claims.map((c) => `- ${c}`).join("\n")}`)
-    .join("\n\n");
+
+  const people = await pool.query(
+    `SELECT claim FROM facts
+       WHERE kind = 'relationship' AND superseded_at IS NULL
+         AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)
+         AND COALESCE(source, '') <> 'dream:extract:ingested'
+       ORDER BY recorded_at DESC LIMIT 10`,
+  );
+  if (people.rowCount) sections.push(`## People\n${people.rows.map((r) => `- ${r.claim}`).join("\n")}`);
+
+  const cur = await pool.query(`SELECT value FROM settings WHERE key = 'current_project'`);
+  if (cur.rowCount) {
+    const slug = cur.rows[0].value;
+    const ctx = await pool.query(`SELECT content FROM project_contexts WHERE project_slug = $1`, [slug]);
+    if (ctx.rowCount) sections.push(`## Project context: ${slug}\n${ctx.rows[0].content}`);
+  }
+
+  const scratch = await pool.query(`SELECT content FROM scratch_memory ORDER BY updated_at DESC LIMIT 1`);
+  if (scratch.rowCount) sections.push(`## Working memory\n${scratch.rows[0].content}`);
+
+  if (sections.length === 0) return "(no core memory yet — this is a young brain)";
+  return sections.join("\n\n");
 }
 
 /** The <coding> prompt section differs by deployment: the container has no

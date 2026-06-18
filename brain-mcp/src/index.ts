@@ -52,6 +52,20 @@ function spotlight(text: string): string {
   );
 }
 
+// ── Shared fact-kind enum (mirrors DB facts_kind_check constraint) ────────────
+
+const FACT_KINDS = [
+  "event",
+  "preference",
+  "commitment",
+  "belief",
+  "fact",
+  "habit",
+  "persona",
+  "relationship",
+  "scratch",
+] as const;
+
 server.tool(
   "search_memory",
   "Search the second brain's memory: page chunks (full-text) and facts (fuzzy). Returns the most relevant memories for a query.",
@@ -141,7 +155,7 @@ server.tool(
   "remember_fact",
   "Store an atomic fact about the user or their world. Facts are bitemporal and append-only — to change one, use supersede_fact.",
   {
-    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit", "persona"]),
+    kind: z.enum(FACT_KINDS),
     claim: z.string().min(3).describe("One self-contained sentence"),
     valid_from: z.string().date().optional().describe("When this became true (YYYY-MM-DD)"),
     confidence: z.number().min(0).max(1).optional(),
@@ -167,7 +181,7 @@ server.tool(
   "Replace a fact that is no longer true: closes the old fact (keeps history) and stores the corrected one.",
   {
     old_fact_id: z.string().uuid(),
-    kind: z.enum(["event", "preference", "commitment", "belief", "fact", "habit", "persona"]),
+    kind: z.enum(FACT_KINDS),
     new_claim: z.string().min(3),
     valid_from: z.string().date().optional(),
   },
@@ -310,6 +324,260 @@ server.tool(
           : "No matching CC sessions found.",
       ),
     );
+  },
+);
+
+// ── Feature 1: scratchpad ─────────────────────────────────────────────────────
+
+server.tool(
+  "set_scratch",
+  "Overwrite the single-row scratchpad with new content (upsert).",
+  { content: z.string().min(1) },
+  async ({ content }) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM scratch_memory");
+      await client.query("INSERT INTO scratch_memory (content) VALUES ($1)", [content]);
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+    return textResult("Scratch set.");
+  },
+);
+
+server.tool(
+  "get_scratch",
+  "Read the current scratchpad content.",
+  {},
+  async () => {
+    const res = await pool.query(
+      "SELECT content FROM scratch_memory ORDER BY updated_at DESC LIMIT 1",
+    );
+    return textResult(res.rows.length ? res.rows[0].content : "(scratch empty)");
+  },
+);
+
+server.tool(
+  "clear_scratch",
+  "Erase the scratchpad.",
+  {},
+  async () => {
+    await pool.query("DELETE FROM scratch_memory");
+    return textResult("Scratch cleared.");
+  },
+);
+
+// ── Feature 2: update_fact ────────────────────────────────────────────────────
+
+server.tool(
+  "update_fact",
+  "Supersede an existing fact that best matches the hint, or create a new one if nothing matches. Combines search + supersede into one call.",
+  {
+    hint: z.string().min(1).describe("Short phrase identifying the fact to update"),
+    new_claim: z.string().min(3).describe("The replacement claim"),
+    kind: z.enum(FACT_KINDS).optional().describe("Narrow search to this kind; defaults the new fact's kind if creating"),
+  },
+  async ({ hint, new_claim, kind }) => {
+    const qVec = await embedText(hint);
+    const matchRes = await pool.query(
+      `SELECT id, kind, claim, visibility FROM facts
+        WHERE superseded_at IS NULL
+          AND ($3::text IS NULL OR kind = $3)
+          AND ( similarity(claim, $1) > 0.3
+                OR (embedding IS NOT NULL AND $2::halfvec IS NOT NULL AND (embedding <=> $2::halfvec) < 0.55) )
+        ORDER BY GREATEST(similarity(claim,$1), COALESCE(1 - (embedding <=> $2::halfvec), 0)) DESC
+        LIMIT 1`,
+      [hint, qVec, kind ?? null],
+    );
+
+    if (matchRes.rows.length > 0) {
+      const match = matchRes.rows[0];
+      // #18: compute embedding before acquiring a connection so the slow HTTPS
+      // call does not hold an idle pool client (matches supersede_fact pattern).
+      const emb = await embedText(new_claim);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const ins = await client.query(
+          `INSERT INTO facts (kind, claim, source, embedding, visibility)
+           VALUES ($1, $2, 'mcp:update_fact', $3::halfvec, $4) RETURNING id`,
+          [kind ?? match.kind, new_claim, emb, match.visibility],
+        );
+        const upd = await client.query(
+          `UPDATE facts
+              SET superseded_at = now(), superseded_by = $2,
+                  valid_until = COALESCE(valid_until, CURRENT_DATE)
+            WHERE id = $1 AND superseded_at IS NULL`,
+          [match.id, ins.rows[0].id],
+        );
+        if (upd.rowCount === 0) throw new Error("matched fact already superseded");
+        await client.query("COMMIT");
+        return textResult(
+          JSON.stringify({ action: "superseded", old_claim: match.claim, new_fact_id: ins.rows[0].id }),
+        );
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      } finally {
+        client.release();
+      }
+    } else {
+      const emb = await embedText(new_claim);
+      const ins = await pool.query(
+        `INSERT INTO facts (kind, claim, source, embedding, visibility)
+         VALUES ($1, $2, 'mcp:update_fact', $3::halfvec, 'private') RETURNING id`,
+        [kind ?? "fact", new_claim, emb],
+      );
+      return textResult(
+        JSON.stringify({ action: "created", new_fact_id: ins.rows[0].id }),
+      );
+    }
+  },
+);
+
+// ── Feature 3: people / relationships ────────────────────────────────────────
+
+server.tool(
+  "remember_person",
+  "Store or update a relationship fact about a person the owner knows.",
+  {
+    name: z.string().min(1),
+    relationship: z.string().min(1),
+    notes: z.string().min(1),
+    valid_from: z.string().date().optional(),
+  },
+  async ({ name, relationship, notes, valid_from }) => {
+    const owner = process.env.OWNER_NAME ?? "Tyler";
+    const claim = `${owner} knows ${name} (${relationship}): ${notes}`;
+    const existing = await pool.query(
+      `SELECT id, visibility FROM facts
+        WHERE kind = 'relationship' AND superseded_at IS NULL
+          AND claim ILIKE '%' || $1 || '%'
+        LIMIT 1`,
+      [name],
+    );
+
+    if (existing.rows.length > 0) {
+      const old = existing.rows[0];
+      const emb = await embedText(claim);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const ins = await client.query(
+          `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
+           VALUES ('relationship', $1, $2, 'mcp:remember_person', $3::halfvec, $4) RETURNING id`,
+          [claim, valid_from ?? null, emb, old.visibility],
+        );
+        await client.query(
+          `UPDATE facts
+              SET superseded_at = now(), superseded_by = $2,
+                  valid_until = COALESCE(valid_until, CURRENT_DATE)
+            WHERE id = $1 AND superseded_at IS NULL`,
+          [old.id, ins.rows[0].id],
+        );
+        await client.query("COMMIT");
+        return textResult(`Updated person ${name} (superseded prior).`);
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      } finally {
+        client.release();
+      }
+    } else {
+      const emb = await embedText(claim);
+      await pool.query(
+        `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
+         VALUES ('relationship', $1, $2, 'mcp:remember_person', $3::halfvec, 'private')`,
+        [claim, valid_from ?? null, emb],
+      );
+      return textResult(`Remembered person ${name}.`);
+    }
+  },
+);
+
+server.tool(
+  "get_people",
+  "List all active relationship facts (people the owner knows).",
+  {},
+  async () => {
+    const res = await pool.query(
+      `SELECT claim, recorded_at FROM facts
+        WHERE kind = 'relationship' AND superseded_at IS NULL
+        ORDER BY recorded_at DESC`,
+    );
+    if (!res.rows.length) return textResult("(no people yet)");
+    return textResult(res.rows.map((r) => `- ${r.claim}`).join("\n"));
+  },
+);
+
+// ── Feature 4: per-project context ───────────────────────────────────────────
+
+server.tool(
+  "set_project_context",
+  "Store or replace the context block for a project slug.",
+  {
+    project: z.string().min(1).describe("Project slug (e.g. 'adhd_squared')"),
+    content: z.string().min(1),
+  },
+  async ({ project, content }) => {
+    await pool.query(
+      `INSERT INTO project_contexts (project_slug, content)
+       VALUES ($1, $2)
+       ON CONFLICT (project_slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now()`,
+      [project, content],
+    );
+    return textResult(`Set context for "${project}".`);
+  },
+);
+
+server.tool(
+  "get_project_context",
+  "Retrieve the stored context for a project slug.",
+  { project: z.string().min(1) },
+  async ({ project }) => {
+    const res = await pool.query(
+      "SELECT content FROM project_contexts WHERE project_slug = $1",
+      [project],
+    );
+    return textResult(res.rows.length ? res.rows[0].content : `(no context for "${project}")`);
+  },
+);
+
+server.tool(
+  "list_projects",
+  "List all projects with a short content preview.",
+  {},
+  async () => {
+    const res = await pool.query(
+      `SELECT project_slug, left(content, 80) AS preview
+         FROM project_contexts
+        ORDER BY updated_at DESC`,
+    );
+    if (!res.rows.length) return textResult("(no projects)");
+    return textResult(res.rows.map((r) => `- ${r.project_slug}: ${r.preview}`).join("\n"));
+  },
+);
+
+server.tool(
+  "set_current_project",
+  "Set (or clear) the active project in the settings table.",
+  { project: z.string().nullable().describe("Project slug to activate, or null to clear") },
+  async ({ project }) => {
+    if (project === null) {
+      await pool.query("DELETE FROM settings WHERE key = 'current_project'");
+      return textResult("Cleared current project.");
+    }
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ('current_project', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [project],
+    );
+    return textResult(`Current project → ${project}.`);
   },
 );
 

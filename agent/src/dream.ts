@@ -437,7 +437,9 @@ async function decayAndPurge(): Promise<string> {
   const purged = await pool.query(
     `DELETE FROM pages WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '72 hours'`,
   );
-  return `decay: ${decay.rowCount} facts decayed, ${purged.rowCount} expired pages purged`;
+  // Working-memory scratchpad is ephemeral — clear it nightly.
+  await pool.query(`DELETE FROM scratch_memory`);
+  return `decay: ${decay.rowCount} facts decayed, ${purged.rowCount} expired pages purged, scratch cleared`;
 }
 
 // ---------- Orchestrator ----------
