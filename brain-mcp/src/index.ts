@@ -63,8 +63,44 @@ const FACT_KINDS = [
   "habit",
   "persona",
   "relationship",
-  "scratch",
 ] as const;
+
+/** Supersede a fact in one transaction: insert the replacement, close the old
+ *  row (keeping history), and inherit the old fact's visibility unless overridden.
+ *  Re-reads visibility inside the transaction (MVCC-safe) and guards against the
+ *  old row being concurrently superseded. Returns the new fact id. Caller passes
+ *  a precomputed embedding so the slow embed never holds a pool client. */
+async function supersedeFactInTx(
+  oldId: string,
+  insert: { kind: string; claim: string; source: string; emb: string | null; validFrom?: string | null; visibilityOverride?: string },
+): Promise<string> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const orig = await client.query(`SELECT visibility FROM facts WHERE id = $1`, [oldId]);
+    if (orig.rowCount === 0) throw new Error("old fact not found");
+    const visibility = insert.visibilityOverride ?? orig.rows[0].visibility ?? "private";
+    const ins = await client.query(
+      `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
+       VALUES ($1, $2, $3, $4, $5::halfvec, $6) RETURNING id`,
+      [insert.kind, insert.claim, insert.validFrom ?? null, insert.source, insert.emb, visibility],
+    );
+    const upd = await client.query(
+      `UPDATE facts SET superseded_at = now(), superseded_by = $2,
+          valid_until = COALESCE(valid_until, CURRENT_DATE)
+        WHERE id = $1 AND superseded_at IS NULL`,
+      [oldId, ins.rows[0].id],
+    );
+    if (upd.rowCount === 0) throw new Error("old fact not found or already superseded");
+    await client.query("COMMIT");
+    return ins.rows[0].id;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 server.tool(
   "search_memory",
@@ -186,41 +222,9 @@ server.tool(
     valid_from: z.string().date().optional(),
   },
   async ({ old_fact_id, kind, new_claim, valid_from }) => {
-    // #18: compute embedding before acquiring a connection so the slow HTTPS
-    // call does not hold an idle pool client (matches remember_fact pattern).
     const emb = await embedText(new_claim);
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      // #17: read the original fact's visibility so the replacement inherits it
-      // rather than silently defaulting to 'private'.
-      const orig = await client.query(
-        `SELECT visibility FROM facts WHERE id = $1`,
-        [old_fact_id],
-      );
-      if (orig.rowCount === 0) throw new Error("old fact not found or already superseded");
-      const visibility = orig.rows[0].visibility ?? "private";
-      const ins = await client.query(
-        `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
-         VALUES ($1, $2, $3, 'mcp:supersede_fact', $4::halfvec, $5) RETURNING id`,
-        [kind, new_claim, valid_from ?? null, emb, visibility],
-      );
-      const upd = await client.query(
-        `UPDATE facts
-            SET superseded_at = now(), superseded_by = $2,
-                valid_until = COALESCE(valid_until, CURRENT_DATE)
-          WHERE id = $1 AND superseded_at IS NULL`,
-        [old_fact_id, ins.rows[0].id],
-      );
-      if (upd.rowCount === 0) throw new Error("old fact not found or already superseded");
-      await client.query("COMMIT");
-      return textResult(`Superseded ${old_fact_id} → ${ins.rows[0].id}`);
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    const newId = await supersedeFactInTx(old_fact_id, { kind, claim: new_claim, source: "mcp:supersede_fact", emb, validFrom: valid_from });
+    return textResult(`Superseded ${old_fact_id} → ${newId}`);
   },
 );
 
@@ -397,35 +401,11 @@ server.tool(
 
     if (matchRes.rows.length > 0) {
       const match = matchRes.rows[0];
-      // #18: compute embedding before acquiring a connection so the slow HTTPS
-      // call does not hold an idle pool client (matches supersede_fact pattern).
       const emb = await embedText(new_claim);
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const ins = await client.query(
-          `INSERT INTO facts (kind, claim, source, embedding, visibility)
-           VALUES ($1, $2, 'mcp:update_fact', $3::halfvec, $4) RETURNING id`,
-          [kind ?? match.kind, new_claim, emb, match.visibility],
-        );
-        const upd = await client.query(
-          `UPDATE facts
-              SET superseded_at = now(), superseded_by = $2,
-                  valid_until = COALESCE(valid_until, CURRENT_DATE)
-            WHERE id = $1 AND superseded_at IS NULL`,
-          [match.id, ins.rows[0].id],
-        );
-        if (upd.rowCount === 0) throw new Error("matched fact already superseded");
-        await client.query("COMMIT");
-        return textResult(
-          JSON.stringify({ action: "superseded", old_claim: match.claim, new_fact_id: ins.rows[0].id }),
-        );
-      } catch (e) {
-        await client.query("ROLLBACK");
-        throw e;
-      } finally {
-        client.release();
-      }
+      const newId = await supersedeFactInTx(match.id, { kind: kind ?? match.kind, claim: new_claim, source: "mcp:update_fact", emb });
+      return textResult(
+        JSON.stringify({ action: "superseded", old_claim: match.claim, new_fact_id: newId }),
+      );
     } else {
       const emb = await embedText(new_claim);
       const ins = await pool.query(
@@ -463,31 +443,9 @@ server.tool(
     );
 
     if (existing.rows.length > 0) {
-      const old = existing.rows[0];
       const emb = await embedText(claim);
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const ins = await client.query(
-          `INSERT INTO facts (kind, claim, valid_from, source, embedding, visibility)
-           VALUES ('relationship', $1, $2, 'mcp:remember_person', $3::halfvec, $4) RETURNING id`,
-          [claim, valid_from ?? null, emb, old.visibility],
-        );
-        await client.query(
-          `UPDATE facts
-              SET superseded_at = now(), superseded_by = $2,
-                  valid_until = COALESCE(valid_until, CURRENT_DATE)
-            WHERE id = $1 AND superseded_at IS NULL`,
-          [old.id, ins.rows[0].id],
-        );
-        await client.query("COMMIT");
-        return textResult(`Updated person ${name} (superseded prior).`);
-      } catch (e) {
-        await client.query("ROLLBACK");
-        throw e;
-      } finally {
-        client.release();
-      }
+      await supersedeFactInTx(existing.rows[0].id, { kind: "relationship", claim, source: "mcp:remember_person", emb, validFrom: valid_from });
+      return textResult(`Updated person ${name} (superseded prior).`);
     } else {
       const emb = await embedText(claim);
       await pool.query(
