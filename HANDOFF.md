@@ -1,7 +1,7 @@
 # HANDOFF — Somnus (adhd_squared)
 
 > Context document for a fresh Claude Code session. Read this, then `README.md`,
-> then skim `research/README.md`. Everything here was true as of 2026-06-19.
+> then skim `research/README.md`. Everything here was true as of 2026-06-22.
 
 ## What this is
 
@@ -36,13 +36,14 @@ architecture choice traces to adversarially-verified research in `research/`.
     `003_cc_sessions.sql`, `004_web_chat.sql`, `005_trgm_indexes.sql` (GIN trgm on
     facts.claim + friction.description), `006_user_crons.sql`, `007_scratch_memory.sql`,
     `008_relationship_kind.sql` (widens `facts_kind_check` to add `relationship`+`scratch`),
-    `009_project_contexts.sql`.
+    `009_project_contexts.sql`, `010_fact_episodes.sql` (`facts.source_episode_ids
+    UUID[]` — episode provenance on dream-extracted facts; no FK, episodes append-only).
   - `db/migrate.sh` — one-shot `migrate` compose service applies any unapplied
     `*.sql` once each on deploy (tracked in `schema_migrations`); baseline-adopts
     pre-existing schema since 001/002 aren't idempotent. **New migrations now
     auto-apply on deploy** — no more manual psql. NOTE: migrations live in
     `db/init/` (mounted to `/migrations`), NOT `db/migrations/`; number them
-    sequentially (next free = 010).
+    sequentially (next free = 011).
   - Postgres via `docker-compose.yml` (pgvector/pg17; **local dev port 5433**).
 - `brain-mcp/` — stdio MCP server, **17 tools**. Memory core: `search_memory`
   (hybrid RRF), `remember_fact`, `supersede_fact`, `core_blocks`,
@@ -61,7 +62,10 @@ architecture choice traces to adversarially-verified research in `research/`.
     completion** (see scheduler). extract → contradictions → reflection →
     **`linkPages` (derive page edges)** → persona evolution → friction
     clustering → skill drafting → embedding backfill → decay/purge (now also
-    clears `scratch_memory`). Ingested content spotlighted untrusted.
+    clears `scratch_memory`). Ingested content spotlighted untrusted. Extract
+    stamps `facts.source_episode_ids`: each transcript line numbered `[#N]`, the
+    LLM cites which lines back a fact, `resolveCites` maps `[#N]`→episode id and
+    drops invented indices (hallucination guard, no FK).
   - `gap-analysis.ts` — reviews recent episodes → finds open questions/
     unresolved problems → researches via stored memory (Haiku classify, Sonnet
     research) → pushes high-priority findings to Telegram. Spend-capped before +
@@ -167,7 +171,18 @@ sensitive paths; Write/Edit workspace-only; **network commands + host tools
 - Backups: VM cron 04:30 → `/var/backups/somnus` (keep 7); Mac launchd 09:00
   pulls → `~/Backups/somnus` (keep 30).
 
-## State of the world (2026-06-19)
+## State of the world (2026-06-22)
+
+**Shipped 2026-06-22 (merged to main + deployed):**
+- **Fact→episode provenance** — dream extract now records which episodes each
+  fact was distilled from (`facts.source_episode_ids UUID[]`, migration `010`).
+  Per-fact LLM citation (`[#N]` line numbers → episode ids, hallucinated indices
+  dropped by `resolveCites`); `$6::uuid[]` bind so an empty cite set can't throw
+  and kill the nightly extract. Forward-only — pre-`010` facts stay NULL (not
+  backfillable). Idea sourced from arXiv 2602.01566 (FS-Researcher); the paper's
+  file-system-as-memory thesis was rejected (the brain supersedes it), only its
+  provenance discipline was adopted. brain-mcp unchanged.
+
 
 **Done & live (foundation):** schema + brain-mcp + agent harness; Telegram+CLI;
 researched prompt + growing persona; dream cycle; **gap analysis (chained off
