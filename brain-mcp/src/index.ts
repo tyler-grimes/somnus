@@ -338,18 +338,13 @@ server.tool(
   "Overwrite the single-row scratchpad with new content (upsert).",
   { content: z.string().min(1) },
   async ({ content }) => {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM scratch_memory");
-      await client.query("INSERT INTO scratch_memory (content) VALUES ($1)", [content]);
-      await client.query("COMMIT");
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    // ponytail: one atomic data-modifying CTE replaces a manual DELETE+INSERT
+    // transaction. The DELETE CTE runs to completion even though the primary
+    // INSERT doesn't reference it (Postgres guarantees this).
+    await pool.query(
+      "WITH d AS (DELETE FROM scratch_memory) INSERT INTO scratch_memory (content) VALUES ($1)",
+      [content],
+    );
     return textResult("Scratch set.");
   },
 );
@@ -399,15 +394,14 @@ server.tool(
       [hint, qVec, kind ?? null],
     );
 
+    const emb = await embedText(new_claim);
     if (matchRes.rows.length > 0) {
       const match = matchRes.rows[0];
-      const emb = await embedText(new_claim);
       const newId = await supersedeFactInTx(match.id, { kind: kind ?? match.kind, claim: new_claim, source: "mcp:update_fact", emb });
       return textResult(
         JSON.stringify({ action: "superseded", old_claim: match.claim, new_fact_id: newId }),
       );
     } else {
-      const emb = await embedText(new_claim);
       const ins = await pool.query(
         `INSERT INTO facts (kind, claim, source, embedding, visibility)
          VALUES ($1, $2, 'mcp:update_fact', $3::halfvec, 'private') RETURNING id`,
